@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: um-rag-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: um-rag-service
+  template:
+    metadata:
+      labels:
+        app: um-rag-service
+    spec:
+      containers:
+      - name: rag-service
+        image: gcr.io/YOUR_PROJECT_ID/um-rag-service:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: GCP_PROJECT_ID
+          value: "your-project-id"
+        - name: GCP_REGION
+          value: "us-east1"
+        - name: VECTOR_INDEX_ID
+          value: "your-index-id"
+        - name: VECTOR_ENDPOINT_ID
+          value: "your-endpoint-id"
+        - name: DEPLOYED_INDEX_ID
+          value: "um-deployed-index"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: um-rag-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: um-rag-service
+  ports:
+  - port: 80
+    targetPort: 8000
+

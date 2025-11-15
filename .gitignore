@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+um-venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output files
+scripts/chunks.json
+scripts/embeddings.json
+scripts/embeddings.basic.json
+scripts/embeddings.jsonl
+*.log
+
+# Environment
+.env
+.env.local
+
