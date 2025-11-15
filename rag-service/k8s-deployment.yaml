@@ -27,7 +27,7 @@ spec:
         - name: VECTOR_ENDPOINT_ID
           value: "your-endpoint-id"
         - name: DEPLOYED_INDEX_ID
-          value: "um-deployed-index"
+          value: "um_deployed_index"
         resources:
           requests:
             memory: "512Mi"

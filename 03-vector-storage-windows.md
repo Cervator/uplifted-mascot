@@ -17,9 +17,15 @@ This guide uses Windows Command Prompt syntax. For PowerShell, most commands are
 
 ### Step 1: Enable Required APIs
 
+**First, load your environment variables from `.env`** (see `04-rag-service.md` for how to load .env in Windows):
+
 ```cmd
-REM Set your project
-set GCP_PROJECT_ID=teralivekubernetes
+REM Load environment variables from .env (use PowerShell script or manual set)
+REM Or set them manually:
+REM set GCP_PROJECT_ID=your-project-id
+REM set GCP_REGION=us-east1
+
+REM Set gcloud project
 gcloud config set project %GCP_PROJECT_ID%
 
 REM Enable required APIs
@@ -32,13 +38,11 @@ gcloud services enable storage-component.googleapis.com
 Vector Search requires embeddings to be stored in Cloud Storage first.
 
 ```cmd
-REM Set variables
-REM Adjust the date suffix below to make it unique (format: YYYYMMDD)
+REM Set bucket name (adjust date suffix to make it unique - format: YYYYMMDD)
 set BUCKET_NAME=um-embeddings-20251114
-set REGION=us-east1
 
-REM Create bucket
-gsutil mb -p %GCP_PROJECT_ID% -l %REGION% gs://%BUCKET_NAME%
+REM Create bucket (uses GCP_PROJECT_ID and GCP_REGION from .env)
+gsutil mb -p %GCP_PROJECT_ID% -l %GCP_REGION% gs://%BUCKET_NAME%
 
 REM Verify
 gsutil ls gs://%BUCKET_NAME%
@@ -153,17 +157,18 @@ The command will return an operation ID. Save it to check status later.
 After running the create command, you'll get an operation ID. Check its status:
 
 ```cmd
-REM Check operation status (replace OPERATION_ID and INDEX_ID with values from create command)
+REM Check operation status (replace OPERATION_ID with value from create command)
+REM INDEX_ID comes from %VECTOR_INDEX_ID% environment variable
 gcloud ai operations describe OPERATION_ID ^
-  --index=INDEX_ID ^
-  --region=%REGION% ^
+  --index=%VECTOR_INDEX_ID% ^
+  --region=%GCP_REGION% ^
   --project=%GCP_PROJECT_ID% ^
   --format="json(done,error,response)"
 
 REM Or get full operation details in JSON
 gcloud ai operations describe OPERATION_ID ^
-  --index=INDEX_ID ^
-  --region=%REGION% ^
+  --index=%VECTOR_INDEX_ID% ^
+  --region=%GCP_REGION% ^
   --project=%GCP_PROJECT_ID% ^
   --format=json
 ```
@@ -191,7 +196,7 @@ If you see `FAILED_PRECONDITION` (error code 9), check:
 
 3. **Verify bucket region matches index region:**
    ```cmd
-   REM Check bucket location (should match your REGION, e.g., us-east1)
+   REM Check bucket location (should match your GCP_REGION)
    gsutil ls -L -b gs://%BUCKET_NAME% | findstr "Location"
    ```
 
@@ -206,10 +211,10 @@ If you see `FAILED_PRECONDITION` (error code 9), check:
    ```
 
 5. **Common fixes:**
-   - Create the bucket if it doesn't exist: `gsutil mb -l us-east1 gs://%BUCKET_NAME%`
+   - Create the bucket if it doesn't exist: `gsutil mb -l %GCP_REGION% gs://%BUCKET_NAME%`
    - Re-upload the JSON file with `.json` extension: `gsutil cp embeddings.json gs://%BUCKET_NAME%/`
    - **Important:** File must have `.json` extension even though content is JSONL format
-   - Ensure bucket and index are in the same region (us-east1)
+   - Ensure bucket and index are in the same region (match %GCP_REGION%)
    - Grant Vertex AI service account permission to read the bucket (see step 4 above)
 
 ### Step 10: Check Index Status (After Creation Completes)
@@ -218,12 +223,12 @@ Once the operation completes, you can check the index:
 
 ```cmd
 REM List indexes
-gcloud ai indexes list --project=%GCP_PROJECT_ID% --region=%REGION%
+gcloud ai indexes list --project=%GCP_PROJECT_ID% --region=%GCP_REGION%
 
-REM Get index details (replace INDEX_ID with actual ID from list above)
-gcloud ai indexes describe INDEX_ID ^
+REM Get index details (uses VECTOR_INDEX_ID from .env)
+gcloud ai indexes describe %VECTOR_INDEX_ID% ^
   --project=%GCP_PROJECT_ID% ^
-  --region=%REGION%
+  --region=%GCP_REGION%
 ```
 
 ## Query the Index (Testing)
@@ -234,20 +239,19 @@ The query script is located at `scripts/query_index.py` in this repository.
 
 **Test query:**
 ```cmd
-python scripts\query_index.py teralivekubernetes us-east1 INDEX_ID "What is the API?" 5
+python scripts\query_index.py %GCP_PROJECT_ID% %GCP_REGION% %VECTOR_INDEX_ID% "What is the API?" 5
 ```
 
 ## Manual Workflow Summary
 
 ```cmd
-REM 1. Setup
-set GCP_PROJECT_ID=teralivekubernetes
-set REGION=us-east1
-REM Adjust date suffix (YYYYMMDD format) to make unique
+REM 1. Setup (load variables from .env first - see 04-rag-service.md)
+REM Variables needed: GCP_PROJECT_ID, GCP_REGION, VECTOR_INDEX_ID, VECTOR_ENDPOINT_ID
+REM Set bucket name (adjust date suffix YYYYMMDD to make unique)
 set BUCKET_NAME=um-embeddings-20241215
 
 REM 2. Create bucket
-gsutil mb -p %GCP_PROJECT_ID% -l %REGION% gs://%BUCKET_NAME%
+gsutil mb -p %GCP_PROJECT_ID% -l %GCP_REGION% gs://%BUCKET_NAME%
 
 REM 3. Convert to JSONL format (with .json extension - Vector AI requires .json extension)
 REM Input: embeddings-array.json (from create_embeddings.py)
@@ -261,36 +265,98 @@ REM 5. Create index (takes 30+ minutes)
 REM First, create/edit index-config.yaml with your bucket name
 gcloud ai indexes create ^
   --project=%GCP_PROJECT_ID% ^
-  --region=%REGION% ^
+  --region=%GCP_REGION% ^
   --display-name="uplifted-mascot-index" ^
   --metadata-file=index-config.yaml
 
-REM 6. Check status
-gcloud ai indexes list --project=%GCP_PROJECT_ID% --region=%REGION%
+REM 6. Check status and save INDEX_ID to .env as VECTOR_INDEX_ID
+gcloud ai indexes list --project=%GCP_PROJECT_ID% --region=%GCP_REGION%
 
-REM 7. Note the INDEX_ID for use in RAG service
+REM 7. Save the INDEX_ID to your .env file as VECTOR_INDEX_ID
 ```
 
 ## Important Notes
 
 ### Index Deployment
 
-After creating an index, you need to deploy it to an endpoint before querying:
+After creating an index, you need to deploy it to an endpoint before querying. **This step is required before setting up the RAG service.**
+
+#### Step 1: Create an Endpoint
 
 ```cmd
-REM Create endpoint
+REM Create endpoint (this creates a new endpoint)
 gcloud ai index-endpoints create ^
   --project=%GCP_PROJECT_ID% ^
-  --region=%REGION% ^
+  --region=%GCP_REGION% ^
   --display-name="um-endpoint"
-
-REM Deploy index to endpoint (replace ENDPOINT_ID and INDEX_ID)
-gcloud ai index-endpoints deploy-index ENDPOINT_ID ^
-  --project=%GCP_PROJECT_ID% ^
-  --region=%REGION% ^
-  --deployed-index-id="um-deployed-index" ^
-  --index=INDEX_ID
 ```
+
+**Save the ENDPOINT_ID** from the output to your `.env` file as `VECTOR_ENDPOINT_ID`. It will look like: `1234567890123456789`
+
+#### Step 2: Deploy Index to Endpoint
+
+```cmd
+REM Uses VECTOR_ENDPOINT_ID and VECTOR_INDEX_ID from .env
+REM Note: deployed-index-id must start with a letter and contain only letters, numbers, and underscores
+gcloud ai index-endpoints deploy-index %VECTOR_ENDPOINT_ID% ^
+  --project=%GCP_PROJECT_ID% ^
+  --region=%GCP_REGION% ^
+  --deployed-index-id="um_deployed_index" ^
+  --display-name="um_deployed_index" ^
+  --index=%VECTOR_INDEX_ID%
+```
+
+**Save the operation ID** from the output. The output will show something like:
+```
+The deploy index operation [projects/.../operations/3522546152555675648] was submitted successfully.
+```
+
+The operation ID is the last number in that path (e.g., `3522546152555675648`). Set it as a variable:
+
+```cmd
+REM Set the operation ID from the deploy command output
+set DEPLOY_OPERATION_ID=3522546152555675648
+```
+
+**Note**: Deployment can take 10-30 minutes. 
+
+Get full JSON output:
+
+```cmd
+gcloud ai operations describe %DEPLOY_OPERATION_ID% ^
+  --index-endpoint=%VECTOR_ENDPOINT_ID% ^
+  --region=%GCP_REGION% ^
+  --project=%GCP_PROJECT_ID% ^
+  --format=json
+```
+
+**Status indicators:**
+- `done: false` = Still in progress
+- `done: true` with no `error` = Successfully completed
+- `done: true` with `error` = Failed (check error details)
+
+#### Step 3: Verify Deployment
+
+First, list your endpoints to get the endpoint ID:
+
+```cmd
+REM List your endpoints (this shows all endpoint IDs)
+gcloud ai index-endpoints list ^
+  --project=%GCP_PROJECT_ID% ^
+  --region=%GCP_REGION%
+```
+
+**Get endpoint details** (uses VECTOR_ENDPOINT_ID from .env):
+
+```cmd
+gcloud ai index-endpoints describe %VECTOR_ENDPOINT_ID% ^
+  --project=%GCP_PROJECT_ID% ^
+  --region=%GCP_REGION%
+```
+
+**Verify your .env file has both IDs:**
+- `VECTOR_INDEX_ID`: Your index ID
+- `VECTOR_ENDPOINT_ID`: Your endpoint ID
 
 ### Cost Considerations
 
@@ -311,7 +377,7 @@ gcloud ai index-endpoints deploy-index ENDPOINT_ID ^
 
 **Normal**: Index creation can take 30-60 minutes for large datasets. Check status periodically:
 ```cmd
-gcloud ai indexes list --project=%GCP_PROJECT_ID% --region=%REGION%
+gcloud ai indexes list --project=%GCP_PROJECT_ID% --region=%GCP_REGION%
 ```
 
 ### Issue: Query Errors
@@ -320,22 +386,7 @@ gcloud ai indexes list --project=%GCP_PROJECT_ID% --region=%REGION%
 
 ### Issue: Environment Variables Not Persisting
 
-**Solution**: In Command Prompt, variables only last for that session. To make them persistent:
-```cmd
-REM Use setx (note: requires new command prompt to take effect)
-setx GCP_PROJECT_ID "teralivekubernetes"
-setx REGION "us-east1"
-```
-
-Or create a batch file (`setup-env.bat`):
-```cmd
-@echo off
-set GCP_PROJECT_ID=teralivekubernetes
-set REGION=us-east1
-set BUCKET_NAME=um-embeddings-teralivekubernetes
-```
-
-Then run: `setup-env.bat` before other commands.
+**Solution**: Load variables from `.env` file. See `04-rag-service.md` for methods to load `.env` in Windows (PowerShell script or batch file). Variables loaded from `.env` will persist for that command prompt session.
 
 ## Next Steps
 
@@ -352,27 +403,29 @@ Create a config file with your setup using notepad or PowerShell:
 ```powershell
 @"
 {
-  "project_id": "teralivekubernetes",
-  "region": "us-east1",
+  "project_id": "$env:GCP_PROJECT_ID",
+  "region": "$env:GCP_REGION",
   "bucket_name": "YOUR_BUCKET_NAME",
-  "index_id": "YOUR_INDEX_ID",
-  "endpoint_id": "YOUR_ENDPOINT_ID",
-  "deployed_index_id": "um-deployed-index"
+  "index_id": "$env:VECTOR_INDEX_ID",
+  "endpoint_id": "$env:VECTOR_ENDPOINT_ID",
+  "deployed_index_id": "um_deployed_index"
 }
 "@ | Out-File -FilePath vector-config.json -Encoding utf8
 ```
 
-**Or create manually** with notepad and save as `vector-config.json`:
+**Or create manually** with notepad and save as `vector-config.json` (replace with your actual values):
 ```json
 {
-  "project_id": "teralivekubernetes",
+  "project_id": "your-project-id",
   "region": "us-east1",
-  "bucket_name": "YOUR_BUCKET_NAME",
-  "index_id": "YOUR_INDEX_ID",
-  "endpoint_id": "YOUR_ENDPOINT_ID",
-  "deployed_index_id": "um-deployed-index"
+  "bucket_name": "your-bucket-name",
+  "index_id": "your-index-id",
+  "endpoint_id": "your-endpoint-id",
+  "deployed_index_id": "um_deployed_index"
 }
 ```
+
+**Note**: Your `.env` file already contains these values, so this config file is optional.
 
 ## Quick Reference: Windows Command Equivalents
 

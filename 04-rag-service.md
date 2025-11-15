@@ -26,21 +26,74 @@ pip install -r requirements.txt
 
 ### Step 2: Create Environment File
 
-Create an environment file in the `rag-service/` directory:
+**Important**: Before creating the `.env` file, make sure you have:
+1. **INDEX_ID** - From your Vector Search index (see `03-vector-storage.md`)
+2. **ENDPOINT_ID** - From deploying your index to an endpoint (see `03-vector-storage.md` - Index Deployment section)
 
-```bash
-# Create .env file in rag-service directory
-cd rag-service
-# On Windows:
-cd rag-service
+The `.env` file works on Windows just like on Linux/Mac. Python's `python-dotenv` library (already in requirements.txt) automatically loads it.
 
-# Create .env file with your values:
-# - GCP_PROJECT_ID
-# - VECTOR_INDEX_ID
-# - VECTOR_ENDPOINT_ID
+Create the `.env` file at the root of the workspace with this content:
+
+```env
+GCP_PROJECT_ID=your-project-id
+GCP_REGION=us-east1
+VECTOR_INDEX_ID=your-index-id
+VECTOR_ENDPOINT_ID=your-endpoint-id
+DEPLOYED_INDEX_ID=um_deployed_index
 ```
 
-**Note**: Get these IDs from your Vector Search setup (see `03-vector-storage.md`).
+
+**Note**: 
+- The `.env` file is automatically loaded by `python-dotenv` when you run the RAG service
+- Don't commit `.env` to git
+
+### Loading .env Variables in Your Shell (Optional)
+
+If you want to use the environment variables in your Windows shell (like `source .env` on Linux):
+
+**Option 1: PowerShell (Recommended)**
+```powershell
+# PowerShell can load .env files easily
+Get-Content .env | ForEach-Object {
+    if ($_ -match '^\s*([^#][^=]*)\s*=\s*(.*)\s*$') {
+        [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+    }
+}
+
+# Verify variables are set
+$env:GCP_PROJECT_ID
+```
+
+**Option 2: Command Prompt Batch Script**
+
+A `load-env.bat` script is provided in the workspace root. Use it like this:
+
+```cmd
+REM Enable delayed expansion (required for the script)
+cmd /v:on
+
+REM Load variables
+call load-env.bat
+
+REM Verify
+echo %GCP_PROJECT_ID%
+```
+
+**Note**: The script requires delayed expansion. You can either:
+- Start your shell with `cmd /v:on`, or
+- Run `setlocal enabledelayedexpansion` before calling the script (but variables won't persist after `endlocal`)
+
+**Option 3: Manual set commands**
+
+For quick testing, just set them manually:
+```cmd
+set GCP_PROJECT_ID=teralivekubernetes
+set GCP_REGION=us-east1
+set VECTOR_INDEX_ID=1385072389695471616
+set VECTOR_ENDPOINT_ID=your-endpoint-id
+```
+
+**Note**: For the RAG service, you don't need to load `.env` into your shell - `python-dotenv` handles it automatically when Python runs. These methods are only if you want the variables available in your shell for other commands.
 
 ### Step 3: Run Locally
 
@@ -160,6 +213,53 @@ curl -X POST http://localhost:8000/ask-mascot \
 ```
 
 ## Troubleshooting
+
+### Issue: Virtual Environment Not Working (Windows)
+
+If you see errors like `OSError: [WinError 2]` or pip installing to system Python:
+
+**Solution 1: Verify venv is activated**
+```cmd
+REM Check that you see (venv) in your prompt
+REM Verify Python path points to venv
+where python
+REM Should show: D:\Dev\GitWS\uplifted-mascot\venv\Scripts\python.exe
+
+REM If not, reactivate:
+venv\Scripts\activate
+```
+
+**Solution 2: Recreate the venv**
+```cmd
+REM Deactivate current venv (if active)
+deactivate
+
+REM Remove old venv
+rmdir /s /q venv
+
+REM Create fresh venv
+python -m venv venv
+
+REM Activate it
+venv\Scripts\activate
+
+REM Verify it's using venv Python
+where python
+REM Should show venv path, not system Python
+
+REM Upgrade pip in venv
+python -m pip install --upgrade pip
+
+REM Now install requirements
+cd rag-service
+pip install -r requirements.txt
+```
+
+**Solution 3: Use python -m pip explicitly**
+```cmd
+REM Even if venv seems active, use explicit module invocation
+python -m pip install -r rag-service\requirements.txt
+```
 
 ### Issue: Authentication Errors
 

@@ -34,7 +34,7 @@ PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 REGION = os.getenv("GCP_REGION", "us-east1")
 INDEX_ID = os.getenv("VECTOR_INDEX_ID")
 ENDPOINT_ID = os.getenv("VECTOR_ENDPOINT_ID")
-DEPLOYED_INDEX_ID = os.getenv("DEPLOYED_INDEX_ID", "um-deployed-index")
+DEPLOYED_INDEX_ID = os.getenv("DEPLOYED_INDEX_ID", "um_deployed_index")
 
 # Initialize Vertex AI
 if PROJECT_ID:

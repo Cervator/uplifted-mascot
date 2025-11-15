@@ -178,7 +178,8 @@ gcloud ai index-endpoints create \
 gcloud ai index-endpoints deploy-index ENDPOINT_ID \
   --project=$GCP_PROJECT_ID \
   --region=$REGION \
-  --deployed-index-id="um-deployed-index" \
+  --deployed-index-id="um_deployed_index" \
+  --display-name="um_deployed_index" \
   --index=INDEX_ID
 ```
 
@@ -224,7 +225,7 @@ cat > vector-config.json << EOF
   "bucket_name": "$BUCKET_NAME",
   "index_id": "YOUR_INDEX_ID",
   "endpoint_id": "YOUR_ENDPOINT_ID",
-  "deployed_index_id": "um-deployed-index"
+  "deployed_index_id": "um_deployed_index"
 }
 EOF
 ```
