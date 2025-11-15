@@ -98,10 +98,10 @@ Windows uses backslashes, but Python handles both. However, when passing paths a
 
 ```cmd
 # Use forward slashes (works on Windows too)
-python um/scripts/process_docs.py ../sample-md chunks.json
+python scripts/process_docs.py ../sample-md chunks.json
 
 # Or use backslashes with quotes
-python um\scripts\process_docs.py ..\sample-md chunks.json
+python scripts\process_docs.py ..\sample-md chunks.json
 ```
 
 ### Environment Variables

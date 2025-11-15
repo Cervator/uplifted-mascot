@@ -52,15 +52,12 @@ gsutil ls gs://%BUCKET_NAME%
 
 Vector Search requires JSONL format (one JSON object per line) but the file must have a `.json` extension. The conversion script is located at `scripts/convert_to_jsonl.py`.
 
-**Copy the script and convert:**
+**Convert embeddings to Vector Search format:**
 ```cmd
-REM Copy the conversion script
-copy um\scripts\convert_to_jsonl.py .
-
 REM Convert to JSONL format with .json extension (Vector Search requires .json extension)
 REM Input: embeddings-array.json (from create_embeddings.py)
 REM Output: embeddings.json (final file for Vector Search)
-python convert_to_jsonl.py embeddings-array.json embeddings.json
+python scripts\convert_to_jsonl.py embeddings-array.json embeddings.json
 ```
 
 **Note:** 
@@ -84,7 +81,7 @@ Copy the example configuration file from `config/index-config.yaml.example` and 
 
 ```cmd
 REM Copy example config
-copy um\config\index-config.yaml.example index-config.yaml
+copy config\index-config.yaml.example index-config.yaml
 
 REM Edit the file and replace YOUR_BUCKET_NAME with your actual bucket name
 REM You can use notepad:
@@ -96,11 +93,6 @@ notepad index-config.yaml
 ### Step 6: Create Index Script
 
 The index creation script is located at `scripts/create_index.py` in this repository.
-
-**Copy the script to your workspace:**
-```cmd
-copy um\scripts\create_index.py .
-```
 
 ## Alternative: Simplified Approach (Manual Index Creation)
 
@@ -240,14 +232,9 @@ gcloud ai indexes describe INDEX_ID ^
 
 The query script is located at `scripts/query_index.py` in this repository.
 
-**Copy the script to your workspace:**
-```cmd
-copy um\scripts\query_index.py .
-```
-
 **Test query:**
 ```cmd
-python query_index.py teralivekubernetes us-east1 INDEX_ID "What is the API?" 5
+python scripts\query_index.py teralivekubernetes us-east1 INDEX_ID "What is the API?" 5
 ```
 
 ## Manual Workflow Summary
@@ -265,7 +252,7 @@ gsutil mb -p %GCP_PROJECT_ID% -l %REGION% gs://%BUCKET_NAME%
 REM 3. Convert to JSONL format (with .json extension - Vector AI requires .json extension)
 REM Input: embeddings-array.json (from create_embeddings.py)
 REM Output: embeddings.json (final file for Vector Search)
-python convert_to_jsonl.py embeddings-array.json embeddings.json
+python scripts\convert_to_jsonl.py embeddings-array.json embeddings.json
 
 REM 4. Upload JSON file to bucket (must have .json extension even though content is JSONL)
 gsutil cp embeddings.json gs://%BUCKET_NAME%/
@@ -401,18 +388,21 @@ Create a config file with your setup using notepad or PowerShell:
 
 ## Working Directory
 
-Since you're working from `um/scripts`, your commands should be:
+If you're working from the `scripts/` directory:
 
 ```cmd
-REM You're already in um\scripts, so:
+REM If you're in scripts directory:
+cd scripts
 REM Convert: embeddings-array.json -> embeddings.json (JSONL format with .json extension)
 python convert_to_jsonl.py embeddings-array.json embeddings.json
 gsutil cp embeddings.json gs://%BUCKET_NAME%/
 ```
 
-If you need to reference files in the parent directory:
+If you're working from the workspace root:
 ```cmd
-REM Use ..\ for parent directory
-copy ..\um\config\index-config.yaml.example index-config.yaml
+REM From workspace root:
+python scripts\convert_to_jsonl.py embeddings-array.json embeddings.json
+gsutil cp embeddings.json gs://%BUCKET_NAME%/
+copy config\index-config.yaml.example index-config.yaml
 ```
 

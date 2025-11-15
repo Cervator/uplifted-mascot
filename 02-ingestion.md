@@ -19,11 +19,11 @@ The ingestion pipeline processes markdown files from your knowledge base, chunks
 
 ```bash
 # Create virtual environment
-python3 -m venv ~/um-workspace/venv
-source ~/um-workspace/venv/bin/activate  # On Windows: venv\Scripts\activate
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install required packages
-cd um/scripts
+cd scripts
 pip install -r requirements.txt
 ```
 
@@ -34,7 +34,7 @@ pip install google-cloud-aiplatform
 pip install tiktoken  # For token counting
 ```
 
-**Windows-specific issues?** See `um/scripts/setup-windows.md` for troubleshooting.
+**Windows-specific issues?** See `scripts/setup-windows.md` for troubleshooting.
 
 ### Step 2: Set Up GCP Authentication
 
@@ -69,24 +69,16 @@ EOF
 
 The document processing script is located at `scripts/process_docs.py` in this repository.
 
-**Copy the script to your workspace:**
-```bash
-# Copy from this repo to your workspace
-cp um/scripts/process_docs.py ~/um-workspace/
-# Or on Windows:
-copy um\scripts\process_docs.py %USERPROFILE%\um-workspace\
-```
-
 ### Step 4: Run Document Processing
 
 ```bash
-# Activate virtual environment
-source ~/um-workspace/venv/bin/activate  # On Windows: venv\Scripts\activate
+# Activate virtual environment (if using one)
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Process your repository
-python ~/um-workspace/process_docs.py ~/um-workspace/your-repo chunks.json
+python scripts/process_docs.py path/to/your-repo chunks.json
 # On Windows:
-python %USERPROFILE%\um-workspace\process_docs.py %USERPROFILE%\um-workspace\your-repo chunks.json
+python scripts\process_docs.py path\to\your-repo chunks.json
 
 # Verify output
 head -50 chunks.json  # On Windows: type chunks.json | more
@@ -98,25 +90,23 @@ head -50 chunks.json  # On Windows: type chunks.json | more
 
 The embedding creation script is located at `scripts/create_embeddings.py` in this repository.
 
-**Copy the script to your workspace:**
-```bash
-# Copy from this repo to your workspace
-cp um/scripts/create_embeddings.py ~/um-workspace/
-# Or on Windows:
-copy um\scripts\create_embeddings.py %USERPROFILE%\um-workspace\
-```
-
 ### Step 5: Create Embeddings
 
 ```bash
 # Set your GCP project
 export GCP_PROJECT_ID="your-project-id"
+# On Windows:
+set GCP_PROJECT_ID=your-project-id
 
 # Create embeddings
-python ~/um-workspace/create_embeddings.py chunks.json embeddings.json
+python scripts/create_embeddings.py chunks.json embeddings-array.json
+# On Windows:
+python scripts\create_embeddings.py chunks.json embeddings-array.json
 
 # Check output size
-ls -lh embeddings.json
+ls -lh embeddings-array.json
+# On Windows:
+dir embeddings-array.json
 ```
 
 ## Manual Workflow Summary
@@ -125,20 +115,22 @@ ls -lh embeddings.json
 
 ```bash
 # 1. Setup
-cd ~/um-workspace
 python3 -m venv venv
-source venv/bin/activate
-pip install google-cloud-aiplatform tiktoken
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+cd scripts
+pip install -r requirements.txt
 
 # 2. Authenticate
 gcloud auth application-default login
 export GCP_PROJECT_ID="your-project-id"
+# On Windows:
+set GCP_PROJECT_ID=your-project-id
 
 # 3. Process documents
-python process_docs.py ~/path/to/repo chunks.json
+python process_docs.py ../path/to/repo chunks.json
 
 # 4. Create embeddings
-python create_embeddings.py chunks.json embeddings.json
+python create_embeddings.py chunks.json embeddings-array.json
 
 # 5. Next: Upload to Vector Search (see 03-vector-storage.md)
 ```

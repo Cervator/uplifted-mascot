@@ -12,21 +12,13 @@ The web frontend provides a simple, embeddable chat interface for the Uplifted M
 
 ## Simple HTML Interface
 
-### Step 1: Copy Frontend Files
+### Step 1: Frontend Files
 
 The frontend files are located in the `frontend/` directory of this repository.
 
-**Copy the frontend directory:**
-```bash
-# Copy frontend directory
-cp -r um/frontend ~/um-workspace/
-# On Windows PowerShell:
-xcopy /E /I um\frontend %USERPROFILE%\um-workspace\frontend
-```
-
 The main files are:
-- `um/frontend/index.html` - Full page chat interface with modern styling
-- `um/frontend/widget.html` - Compact embeddable widget version
+- `frontend/index.html` - Full page chat interface with modern styling
+- `frontend/widget.html` - Compact embeddable widget version
 
 Both files are complete, self-contained HTML files with embedded CSS and JavaScript. They include:
 - Chat interface with message bubbles
@@ -41,8 +33,10 @@ Both files are complete, self-contained HTML files with embedded CSS and JavaScr
 # Open index.html in a browser
 # Or use a simple HTTP server:
 
-cd ~/um-workspace/frontend
+cd frontend
 python3 -m http.server 8080
+# On Windows:
+python -m http.server 8080
 
 # Then visit http://localhost:8080
 ```
@@ -51,7 +45,7 @@ python3 -m http.server 8080
 
 ### Step 3: Widget Version
 
-The widget version is available at `um/frontend/widget.html`. It's a compact, minimal version designed for embedding in existing websites. The widget is 400x500px and includes all necessary functionality in a single HTML file.
+The widget version is available at `frontend/widget.html`. It's a compact, minimal version designed for embedding in existing websites. The widget is 400x500px and includes all necessary functionality in a single HTML file.
 
 ## Configuration
 
@@ -72,7 +66,7 @@ const RAG_SERVICE_URL = 'http://YOUR_GKE_SERVICE_EXTERNAL_IP';
 
 ```bash
 # Create gh-pages branch
-cd ~/um-workspace/frontend
+cd frontend
 git init
 git add index.html widget.html
 git commit -m "Initial frontend"
@@ -91,7 +85,7 @@ git push -u origin main
 gsutil mb -p $GCP_PROJECT_ID gs://um-frontend
 
 # Upload files
-gsutil cp -r ~/um-workspace/frontend/* gs://um-frontend/
+gsutil cp -r frontend/* gs://um-frontend/
 
 # Make public
 gsutil iam ch allUsers:objectViewer gs://um-frontend
@@ -110,11 +104,13 @@ For serving from GKE, you can create a simple nginx-based deployment that serves
 # Check: http://localhost:8000/health
 
 # 2. Update frontend config
-# Edit index.html, set RAG_SERVICE_URL
+# Edit frontend/index.html, set RAG_SERVICE_URL
 
 # 3. Serve frontend locally
-cd ~/um-workspace/frontend
+cd frontend
 python3 -m http.server 8080
+# On Windows:
+python -m http.server 8080
 
 # 4. Open browser
 # Visit: http://localhost:8080
@@ -143,7 +139,7 @@ Modify the CSS in the `<style>` section to match your project's branding.
 
 ### Issue: CORS Errors
 
-**Solution**: The RAG service already includes CORS middleware (see `um/rag-service/rag_service.py`). If you need to restrict origins, edit the `allow_origins` list in the CORS middleware configuration.
+**Solution**: The RAG service already includes CORS middleware (see `rag-service/rag_service.py`). If you need to restrict origins, edit the `allow_origins` list in the CORS middleware configuration.
 
 ### Issue: Service Not Reachable
 
@@ -173,11 +169,13 @@ Once the frontend is working:
 
 ```bash
 # 1. Setup
-cd ~/um-workspace/frontend
+cd frontend
 # Edit index.html: Update RAG_SERVICE_URL
 
 # 2. Test locally
 python3 -m http.server 8080
+# On Windows:
+python -m http.server 8080
 # Visit http://localhost:8080
 
 # 3. Deploy (choose one):

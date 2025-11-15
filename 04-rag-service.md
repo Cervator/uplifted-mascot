@@ -16,39 +16,25 @@ The RAG (Retrieval-Augmented Generation) Service is the API endpoint that powers
 ### Step 1: Install Dependencies
 
 ```bash
-# Activate virtual environment
-source ~/um-workspace/venv/bin/activate
+# Activate virtual environment (if using one)
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install web framework and dependencies
-pip install fastapi uvicorn
-pip install google-cloud-aiplatform
-pip install python-dotenv
+cd rag-service
+pip install -r requirements.txt
 ```
 
-### Step 2: Copy RAG Service
+### Step 2: Create Environment File
 
-The RAG service is located at `rag-service/rag_service.py` in this repository.
-
-**Copy the service to your workspace:**
+Create an environment file in the `rag-service/` directory:
 
 ```bash
-# Copy the RAG service directory
-cp -r um/rag-service ~/um-workspace/
-# On Windows PowerShell:
-xcopy /E /I um\rag-service %USERPROFILE%\um-workspace\rag-service
-```
-
-### Step 3: Create Environment File
-
-Copy the example environment file and update it with your values:
-
-```bash
-# Copy example .env file
-cp um/config/.env.example ~/um-workspace/rag-service/.env
+# Create .env file in rag-service directory
+cd rag-service
 # On Windows:
-copy um\config\.env.example %USERPROFILE%\um-workspace\rag-service\.env
+cd rag-service
 
-# Edit .env and update with your actual values:
+# Create .env file with your values:
 # - GCP_PROJECT_ID
 # - VECTOR_INDEX_ID
 # - VECTOR_ENDPOINT_ID
@@ -56,21 +42,29 @@ copy um\config\.env.example %USERPROFILE%\um-workspace\rag-service\.env
 
 **Note**: Get these IDs from your Vector Search setup (see `03-vector-storage.md`).
 
-### Step 4: Run Locally
+### Step 3: Run Locally
 
 ```bash
 # Set environment variables
 export GCP_PROJECT_ID="your-project-id"
 export VECTOR_INDEX_ID="your-index-id"
 export VECTOR_ENDPOINT_ID="your-endpoint-id"
+# On Windows:
+set GCP_PROJECT_ID=your-project-id
+set VECTOR_INDEX_ID=your-index-id
+set VECTOR_ENDPOINT_ID=your-endpoint-id
 
 # Run the service
-python ~/um-workspace/rag_service.py
+cd rag-service
+python rag_service.py
+# On Windows:
+cd rag-service
+python rag_service.py
 ```
 
 The service will be available at `http://localhost:8000`
 
-### Step 5: Test the API
+### Step 4: Test the API
 
 ```bash
 # Health check
@@ -95,44 +89,42 @@ Once running, visit:
 
 ## Deployment to GKE
 
-### Step 6: Dockerfile and Requirements
+### Step 5: Build and Push Container
 
-The `Dockerfile` and `requirements.txt` are already in the `rag-service/` directory you copied. They're ready to use.
-
-### Step 8: Build and Push Container
+The `Dockerfile` and `requirements.txt` are already in the `rag-service/` directory.
 
 ```bash
 # Set variables
 export GCP_PROJECT_ID="your-project-id"
 export IMAGE_NAME="gcr.io/$GCP_PROJECT_ID/um-rag-service"
+# On Windows:
+set GCP_PROJECT_ID=your-project-id
+set IMAGE_NAME=gcr.io/%GCP_PROJECT_ID%/um-rag-service
 
 # Build
-docker build -t $IMAGE_NAME:latest ~/um-workspace
+cd rag-service
+docker build -t %IMAGE_NAME%:latest .
 
 # Push to GCR
-docker push $IMAGE_NAME:latest
+docker push %IMAGE_NAME%:latest
 ```
 
-### Step 9: Deploy to GKE
+### Step 6: Deploy to GKE
 
-The Kubernetes deployment file is located at `rag-service/k8s-deployment.yaml`. Copy it and update with your values:
+The Kubernetes deployment file is located at `rag-service/k8s-deployment.yaml`. Edit it and update with your values:
 
 ```bash
-# Copy deployment file
-cp um/rag-service/k8s-deployment.yaml ~/um-workspace/
-# On Windows:
-copy um\rag-service\k8s-deployment.yaml %USERPROFILE%\um-workspace\
-
 # Edit the file and update:
 # - YOUR_PROJECT_ID
 # - Environment variable values
+notepad rag-service\k8s-deployment.yaml
 ```
 
 Deploy:
 
 ```bash
 # Apply deployment
-kubectl apply -f ~/um-workspace/k8s-deployment.yaml
+kubectl apply -f rag-service/k8s-deployment.yaml
 
 # Check status
 kubectl get pods -l app=um-rag-service
@@ -146,8 +138,8 @@ kubectl get service um-rag-service
 
 ```bash
 # 1. Start service locally
-cd ~/um-workspace
-source venv/bin/activate
+cd rag-service
+source ../venv/bin/activate  # On Windows: ..\venv\Scripts\activate
 python rag_service.py
 
 # 2. In another terminal, test
@@ -220,6 +212,6 @@ After deployment, save your service URL:
 SERVICE_URL=$(kubectl get service um-rag-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
 # Save to config
-echo "RAG_SERVICE_URL=http://$SERVICE_URL" >> ~/um-workspace/config.env
+echo "RAG_SERVICE_URL=http://$SERVICE_URL" >> config.env
 ```
 

@@ -58,29 +58,35 @@ Before starting, ensure you have:
 
 ```bash
 # 1. Setup environment
-mkdir -p ~/um-workspace
-cd ~/um-workspace
 python3 -m venv venv
-source venv/bin/activate
-pip install google-cloud-aiplatform fastapi uvicorn
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+cd scripts
+pip install -r requirements.txt
+cd ../rag-service
+pip install -r requirements.txt
 
 # 2. Authenticate
 gcloud auth application-default login
 export GCP_PROJECT_ID="your-project-id"
+# On Windows:
+set GCP_PROJECT_ID=your-project-id
 
 # 3. Process documents (see 01 & 02)
 git clone https://github.com/your-org/your-repo.git
-python process_docs.py ~/um-workspace/your-repo chunks.json
-python create_embeddings.py chunks.json embeddings.json
+cd scripts
+python process_docs.py ../your-repo chunks.json
+python create_embeddings.py chunks.json embeddings-array.json
 
 # 4. Setup vector storage (see 03)
 # Create bucket, upload, create index
 
 # 5. Deploy RAG service (see 04)
+cd ../rag-service
 python rag_service.py  # Local testing
 # Or deploy to GKE
 
 # 6. Create frontend (see 05)
+cd ../frontend
 # Edit HTML, test locally, deploy
 ```
 

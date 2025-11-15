@@ -59,9 +59,9 @@ Copy the example configuration file from `config/index-config.yaml.example` and 
 
 ```bash
 # Copy example config
-cp um/config/index-config.yaml.example ~/um-workspace/index-config.yaml
+cp config/index-config.yaml.example index-config.yaml
 # On Windows:
-copy um\config\index-config.yaml.example %USERPROFILE%\um-workspace\index-config.yaml
+copy config\index-config.yaml.example index-config.yaml
 
 # Edit the file and replace YOUR_BUCKET_NAME with your actual bucket name
 ```
@@ -70,34 +70,17 @@ copy um\config\index-config.yaml.example %USERPROFILE%\um-workspace\index-config
 
 The index creation script is located at `scripts/create_index.py` in this repository.
 
-**Copy the script to your workspace:**
-```bash
-cp um/scripts/create_index.py ~/um-workspace/
-# On Windows:
-copy um\scripts\create_index.py %USERPROFILE%\um-workspace\
-```
-
 ### Step 6: Convert Embeddings to Vector Search Format
 
 Vector Search requires a specific JSONL format. The conversion script is located at `scripts/convert_to_jsonl.py`.
 
-**Copy the script to your workspace:**
-```bash
-cp um/scripts/convert_to_jsonl.py ~/um-workspace/
-# On Windows:
-copy um\scripts\convert_to_jsonl.py %USERPROFILE%\um-workspace\
-```
-
 ### Step 7: Upload in Correct Format
 
 ```bash
-# Convert to JSONL
-python ~/um-workspace/convert_to_jsonl.py embeddings.json embeddings.jsonl
+# Convert to JSONL (with .json extension - Vector AI requires .json extension)
+python scripts/convert_to_jsonl.py embeddings-array.json embeddings.json
 
-# Upload JSONL to bucket
-gsutil cp embeddings.jsonl gs://$BUCKET_NAME/
-
-# Also upload the original embeddings.json for reference
+# Upload JSON file to bucket (must have .json extension even though content is JSONL)
 gsutil cp embeddings.json gs://$BUCKET_NAME/
 ```
 
@@ -150,13 +133,6 @@ gcloud ai indexes describe INDEX_ID \
 
 The query script is located at `scripts/query_index.py` in this repository.
 
-**Copy the script to your workspace:**
-```bash
-cp um/scripts/query_index.py ~/um-workspace/
-# On Windows:
-copy um\scripts\query_index.py %USERPROFILE%\um-workspace\
-```
-
 ## Manual Workflow Summary
 
 ```bash
@@ -169,8 +145,8 @@ export BUCKET_NAME="um-embeddings-$(date +%s)"
 gsutil mb -p $GCP_PROJECT_ID -l $REGION gs://$BUCKET_NAME
 
 # 3. Convert and upload embeddings
-python convert_to_jsonl.py embeddings.json embeddings.jsonl
-gsutil cp embeddings.jsonl gs://$BUCKET_NAME/
+python scripts/convert_to_jsonl.py embeddings-array.json embeddings.json
+gsutil cp embeddings.json gs://$BUCKET_NAME/
 
 # 4. Create index (takes 30+ minutes)
 gcloud ai indexes create \
@@ -241,7 +217,7 @@ Once your index is created and deployed:
 Create a config file with your setup:
 
 ```bash
-cat > ~/um-workspace/vector-config.json << EOF
+cat > vector-config.json << EOF
 {
   "project_id": "$GCP_PROJECT_ID",
   "region": "$REGION",

@@ -62,16 +62,14 @@ your-repo/
 ### Step 1: Clone Repository
 
 ```bash
-# Create a working directory
-mkdir -p ~/um-workspace
-cd ~/um-workspace
-
-# Clone your repository
+# Clone your repository (from your workspace directory)
 git clone https://github.com/your-org/your-docs-repo.git
 cd your-docs-repo
 
 # Verify markdown files are present
 find . -name "*.md" -type f | head -10
+# On Windows:
+dir /s /b *.md
 ```
 
 ### Step 2: Verify Repository Access
@@ -92,14 +90,14 @@ head -20 README.md
 Create a configuration file to specify which files to process:
 
 ```bash
-# Create config directory
-mkdir -p ~/um-workspace/config
+# Create config directory (if it doesn't exist)
+mkdir -p config
 
 # Create a simple file list (we'll automate this later)
-cat > ~/um-workspace/config/repo-config.json << EOF
+cat > config/repo-config.json << EOF
 {
   "repository": "your-org/your-docs-repo",
-  "local_path": "~/um-workspace/your-docs-repo",
+  "local_path": "./your-docs-repo",
   "include_patterns": ["*.md"],
   "exclude_patterns": [
     "node_modules/**",
@@ -109,6 +107,8 @@ cat > ~/um-workspace/config/repo-config.json << EOF
   "min_file_size": 100
 }
 EOF
+# On Windows, create manually with notepad:
+# notepad config\repo-config.json
 ```
 
 ## Multiple Repositories
@@ -118,13 +118,14 @@ You can process multiple repositories for different projects:
 ### Example: Demicracy + Bifrost
 
 ```bash
-# Clone both repositories
-cd ~/um-workspace
+# Clone both repositories (from your workspace directory)
 git clone https://github.com/your-org/demicracy-docs.git
 git clone https://github.com/your-org/bifrost.git
 
 # Verify both
 ls -d */
+# On Windows:
+dir /b /ad
 ```
 
 ### Configuration for Multiple Repos
@@ -134,12 +135,12 @@ ls -d */
   "repositories": [
     {
       "name": "demicracy",
-      "path": "~/um-workspace/demicracy-docs",
+      "path": "./demicracy-docs",
       "mascot": "bill"
     },
     {
       "name": "bifrost",
-      "path": "~/um-workspace/bifrost",
+      "path": "./bifrost",
       "mascot": "gooey"
     }
   ]
@@ -152,7 +153,9 @@ ls -d */
 
 ```bash
 # Example: Only process docs/ directory
-find ~/um-workspace/your-repo/docs -name "*.md" -type f
+find your-repo/docs -name "*.md" -type f
+# On Windows:
+dir /s /b your-repo\docs\*.md
 ```
 
 ### Exclude Patterns
@@ -239,13 +242,19 @@ For initial testing, create a simple file list:
 
 ```bash
 # Generate list of markdown files
-find ~/um-workspace/your-repo -name "*.md" -type f > ~/um-workspace/file-list.txt
+find your-repo -name "*.md" -type f > file-list.txt
+# On Windows:
+dir /s /b your-repo\*.md > file-list.txt
 
 # Review the list
-cat ~/um-workspace/file-list.txt
+cat file-list.txt
+# On Windows:
+type file-list.txt
 
 # Count files
-wc -l ~/um-workspace/file-list.txt
+wc -l file-list.txt
+# On Windows:
+find /c /v "" file-list.txt
 ```
 
 This file list will be used in the next step (Ingestion) to process the documents.
