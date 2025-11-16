@@ -168,26 +168,72 @@ gcloud ai indexes list --project=$GCP_PROJECT_ID --region=$REGION
 After creating an index, you need to deploy it to an endpoint before querying:
 
 ```bash
-# Create endpoint
+# Create endpoint (just a container - no compute costs yet)
 gcloud ai index-endpoints create \
   --project=$GCP_PROJECT_ID \
   --region=$REGION \
   --display-name="um-endpoint"
 
 # Deploy index to endpoint
+# IMPORTANT: The machine type is set HERE during deployment, not during endpoint creation
+# Use --machine-type="e2-standard-2" for development to minimize costs!
+# e2-standard-16 costs ~$0.75/hour vs e2-standard-2 at ~$0.10/hour
 gcloud ai index-endpoints deploy-index ENDPOINT_ID \
   --project=$GCP_PROJECT_ID \
   --region=$REGION \
   --deployed-index-id="um_deployed_index" \
   --display-name="um_deployed_index" \
-  --index=INDEX_ID
+  --index=INDEX_ID \
+  --machine-type="e2-standard-2"
 ```
+
+### Cost Management
+
+**⚠️ Important: Deployed indexes run 24/7 and can be expensive!**
+
+**Key Point**: The endpoint itself is just a container (no cost). The compute costs come from the deployed index. When you deploy an index to an endpoint, that's when the compute instance starts running. Costs depend on the machine type specified during deployment:
+- **e2-standard-2**: ~$0.10/hour (~$73/month) - Recommended
+- **e2-standard-16**: ~$0.75/hour (~$547/month) - ⚠️ Very expensive!
+
+**To reduce costs:**
+
+1. **Delete endpoint when not in use** (stops all costs):
+   ```bash
+   # Delete the entire endpoint (index data is preserved)
+   gcloud ai index-endpoints delete ENDPOINT_ID \
+     --project=$GCP_PROJECT_ID \
+     --region=$REGION
+   
+   # When needed again, recreate endpoint and redeploy index
+   ```
+
+2. **Undeploy index** (stops compute costs, endpoint remains but costs nothing):
+   ```bash
+   # Undeploy the index (stops compute costs)
+   gcloud ai index-endpoints undeploy-index ENDPOINT_ID \
+     --project=$GCP_PROJECT_ID \
+     --region=$REGION \
+     --deployed-index-id="um_deployed_index"
+   
+   # When needed again, redeploy with smaller machine type
+   gcloud ai index-endpoints deploy-index ENDPOINT_ID \
+     --project=$GCP_PROJECT_ID \
+     --region=$REGION \
+     --deployed-index-id="um_deployed_index" \
+     --display-name="um_deployed_index" \
+     --index=INDEX_ID \
+     --machine-type="e2-standard-2"
+   ```
 
 ### Cost Considerations
 
-- **Index Storage**: ~$0.10 per GB per month
-- **Query Operations**: ~$0.10 per 1K queries
-- **Your $50 credit**: Should handle significant usage for development
+- **Index Storage**: ~$0.10 per GB per month (cheap - data storage)
+- **Deployed Index Compute**: ~$0.10-0.75/hour depending on machine type (runs 24/7) ⚠️
+- **Empty Endpoint**: No cost (endpoint without deployed index costs nothing)
+- **Query Operations**: ~$0.10 per 1K queries (very cheap)
+- **Your $50 credit**: Will be consumed quickly by endpoint compute costs if using large machine types!
+
+**Recommendation**: Use `e2-standard-2` for development, and undeploy when not actively testing.
 
 ## Troubleshooting
 

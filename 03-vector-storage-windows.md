@@ -283,8 +283,10 @@ After creating an index, you need to deploy it to an endpoint before querying. *
 
 #### Step 1: Create an Endpoint
 
+The endpoint is just a container/service - it doesn't cost money until you deploy an index to it. No machine type is specified here.
+
 ```cmd
-REM Create endpoint (this creates a new endpoint)
+REM Create endpoint (this creates an empty endpoint - no compute costs yet)
 gcloud ai index-endpoints create ^
   --project=%GCP_PROJECT_ID% ^
   --region=%GCP_REGION% ^
@@ -295,16 +297,28 @@ gcloud ai index-endpoints create ^
 
 #### Step 2: Deploy Index to Endpoint
 
+**Important: Machine Type Selection**
+
+The compute size and costs are determined when you deploy an index to the endpoint. The `--machine-type` flag in the `deploy-index` command sets the compute instance size that will run 24/7. For low-traffic RAG services, use the smallest machine type to minimize costs:
+
+- **e2-standard-2** (2 vCPU, 8GB RAM) - Recommended for development/low traffic (~$0.10/hour)
+- **e2-standard-4** (4 vCPU, 16GB RAM) - For moderate traffic (~$0.20/hour)
+- **e2-standard-16** (16 vCPU, 64GB RAM) - Only for high traffic (~$0.75/hour) ⚠️ Expensive!
+
 ```cmd
 REM Uses VECTOR_ENDPOINT_ID and VECTOR_INDEX_ID from .env
 REM Note: deployed-index-id must start with a letter and contain only letters, numbers, and underscores
+REM Use --machine-type to specify a smaller (cheaper) instance
 gcloud ai index-endpoints deploy-index %VECTOR_ENDPOINT_ID% ^
   --project=%GCP_PROJECT_ID% ^
   --region=%GCP_REGION% ^
   --deployed-index-id="um_deployed_index" ^
   --display-name="um_deployed_index" ^
-  --index=%VECTOR_INDEX_ID%
+  --index=%VECTOR_INDEX_ID% ^
+  --machine-type="e2-standard-2"
 ```
+
+**Note**: If you already deployed with a larger machine type, you'll need to undeploy and redeploy (see Cost Management section below).
 
 **Save the operation ID** from the output. The output will show something like:
 ```
@@ -358,11 +372,104 @@ gcloud ai index-endpoints describe %VECTOR_ENDPOINT_ID% ^
 - `VECTOR_INDEX_ID`: Your index ID
 - `VECTOR_ENDPOINT_ID`: Your endpoint ID
 
+### Cost Management
+
+**⚠️ Important: Deployed indexes run 24/7 and can be expensive!**
+
+**Key Point**: The endpoint itself is just a container (no cost). The compute costs come from the deployed index. When you deploy an index to an endpoint, that's when the compute instance starts running. Costs depend on the machine type specified during deployment:
+- **e2-standard-2**: ~$0.10/hour (~$73/month) - Recommended for development
+- **e2-standard-4**: ~$0.20/hour (~$146/month)
+- **e2-standard-16**: ~$0.75/hour (~$547/month) - ⚠️ Very expensive for low traffic!
+
+#### Option 1: Use Smaller Machine Type
+
+If you deployed with a large machine type, undeploy and redeploy with a smaller one:
+
+```cmd
+REM 1. Undeploy the current index (removes index from endpoint)
+gcloud ai index-endpoints undeploy-index %VECTOR_ENDPOINT_ID% ^
+  --project=%GCP_PROJECT_ID% ^
+  --region=%GCP_REGION% ^
+  --deployed-index-id="um_deployed_index"
+
+REM 2. Wait for undeployment to complete (check status)
+gcloud ai index-endpoints describe %VECTOR_ENDPOINT_ID% ^
+  --project=%GCP_PROJECT_ID% ^
+  --region=%GCP_REGION%
+
+REM 3. Redeploy with smaller machine type
+gcloud ai index-endpoints deploy-index %VECTOR_ENDPOINT_ID% ^
+  --project=%GCP_PROJECT_ID% ^
+  --region=%GCP_REGION% ^
+  --deployed-index-id="um_deployed_index" ^
+  --display-name="um_deployed_index" ^
+  --index=%VECTOR_INDEX_ID% ^
+  --machine-type="e2-standard-2"
+```
+
+**Note**: After undeploying, the endpoint still exists but costs nothing (no compute running). To completely remove the endpoint, see Option 2 (delete endpoint).
+
+#### Option 2: Delete Endpoint When Not in Use
+
+**Important**: 
+- `undeploy-index` removes the index from the endpoint, which stops the compute costs
+- However, the endpoint itself still exists (but costs nothing when empty)
+- To completely remove the endpoint, delete it entirely:
+
+```cmd
+REM Option A: Just undeploy the index (stops compute costs, keeps endpoint)
+REM This is usually sufficient - empty endpoints cost nothing
+gcloud ai index-endpoints undeploy-index %VECTOR_ENDPOINT_ID% ^
+  --project=%GCP_PROJECT_ID% ^
+  --region=%GCP_REGION% ^
+  --deployed-index-id="um_deployed_index"
+
+REM Option B: Delete the endpoint entirely (if you want to remove it completely)
+REM Note: You'll need to recreate it later, but the index data is preserved
+gcloud ai index-endpoints delete %VECTOR_ENDPOINT_ID% ^
+  --project=%GCP_PROJECT_ID% ^
+  --region=%GCP_REGION%
+
+REM When you need it again, recreate the endpoint and redeploy:
+REM 1. Create new endpoint (get new ENDPOINT_ID)
+gcloud ai index-endpoints create ^
+  --project=%GCP_PROJECT_ID% ^
+  --region=%GCP_REGION% ^
+  --display-name="um-endpoint"
+
+REM 2. Update .env with new VECTOR_ENDPOINT_ID
+
+REM 3. Deploy index to new endpoint with small machine type
+gcloud ai index-endpoints deploy-index %VECTOR_ENDPOINT_ID% ^
+  --project=%GCP_PROJECT_ID% ^
+  --region=%GCP_REGION% ^
+  --deployed-index-id="um_deployed_index" ^
+  --display-name="um_deployed_index" ^
+  --index=%VECTOR_INDEX_ID% ^
+  --machine-type="e2-standard-2"
+```
+
+**Note**: 
+- The index data itself is stored separately and doesn't cost much
+- Undeploying the index stops compute costs (endpoint remains but costs nothing)
+- Deleting the endpoint removes it completely (you'll need to recreate it later)
+- You can redeploy the same index to the same endpoint anytime
+
+#### Option 3: Host RAG Service in GKE (Endpoint Still Needed)
+
+The Vector Search endpoint is a managed service and must run in GCP (can't be hosted in GKE). However, you can:
+- Deploy your RAG service to your existing GKE cluster (see `04-rag-service.md`)
+- Keep the Vector Search endpoint minimal (e2-standard-2)
+- The RAG service in GKE will query the Vector Search endpoint
+
 ### Cost Considerations
 
-- **Index Storage**: ~$0.10 per GB per month
-- **Query Operations**: ~$0.10 per 1K queries
-- **Your $50 credit**: Should handle significant usage for development
+- **Index Storage**: ~$0.10 per GB per month (cheap - data storage)
+- **Endpoint Compute**: ~$0.10-0.75/hour depending on machine type (runs 24/7)
+- **Query Operations**: ~$0.10 per 1K queries (very cheap)
+- **Your $50 credit**: Will be consumed quickly by endpoint compute costs if using large machine types!
+
+**Recommendation**: Use `e2-standard-2` for development, and undeploy when not actively testing.
 
 ## Troubleshooting
 

@@ -69,7 +69,7 @@ def get_chat_model():
         # Prioritize Flash models - faster, cheaper, perfect for RAG/document Q&A
         model_names = [
             "gemini-2.5-flash",          # Latest Flash - best balance of speed/quality for RAG
-            "gemini-2.5-flash-lite",     # Fastest model - great for simple Q&A
+            "gemini-2.5-flash-lite",     # Fastest model - great for simple Q&A (may be more concise?)
             "gemini-2.0-flash-001",      # Stable Flash - reliable fallback
             "gemini-2.0-flash-lite-001", # Stable Flash-Lite - fastest fallback
             "gemini-2.5-pro",            # Pro model - only if Flash models don't work
