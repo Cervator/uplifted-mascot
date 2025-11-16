@@ -10,8 +10,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google.cloud import aiplatform
-from vertexai.preview import vector_search
-from vertexai.language_models import TextEmbeddingModel, ChatModel
+from vertexai.language_models import TextEmbeddingModel
+from vertexai.generative_models import GenerativeModel
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -44,6 +44,7 @@ if PROJECT_ID:
 _embedding_model = None
 _chat_model = None
 _vector_index = None
+_chunks_cache = None  # Cache for looking up chunk text by ID
 
 def get_embedding_model():
     """Get or create embedding model."""
@@ -60,26 +61,101 @@ def get_embedding_model():
     return _embedding_model
 
 def get_chat_model():
-    """Get or create chat model."""
+    """Get or create chat model using modern GenerativeModel API."""
     global _chat_model
     if _chat_model is None:
-        _chat_model = ChatModel.from_pretrained("gemini-pro")
+        # Try Model Garden model names (simple names, no "google/" prefix needed)
+        # Using the modern GenerativeModel API
+        # Prioritize Flash models - faster, cheaper, perfect for RAG/document Q&A
+        model_names = [
+            "gemini-2.5-flash",          # Latest Flash - best balance of speed/quality for RAG
+            "gemini-2.5-flash-lite",     # Fastest model - great for simple Q&A
+            "gemini-2.0-flash-001",      # Stable Flash - reliable fallback
+            "gemini-2.0-flash-lite-001", # Stable Flash-Lite - fastest fallback
+            "gemini-2.5-pro",            # Pro model - only if Flash models don't work
+        ]
+        
+        last_error = None
+        for model_name in model_names:
+            try:
+                print(f"Trying to load model: {model_name}")
+                _chat_model = GenerativeModel(model_name)
+                print(f"✓ Successfully loaded model: {model_name}")
+                break
+            except Exception as e:
+                last_error = e
+                error_msg = str(e)
+                if "404" in error_msg or "not found" in error_msg.lower():
+                    print(f"  ✗ Not found")
+                else:
+                    print(f"  ✗ Error: {error_msg[:80]}")
+                continue
+        
+        if _chat_model is None:
+            raise Exception(
+                f"Could not load any Gemini model. Last error: {last_error}\n\n"
+                "Run this to check available models:\n"
+                "  python scripts/check_gemini_models.py\n\n"
+                "Or check Model Garden in GCP Console for available model shortnames."
+            )
+    
     return _chat_model
 
 def get_vector_index():
     """Get or create vector index connection."""
     global _vector_index
     if _vector_index is None:
-        endpoint = vector_search.get_index_endpoint(ENDPOINT_ID)
+        # Use MatchingEngineIndexEndpoint from aiplatform
+        # Format: projects/{project}/locations/{location}/indexEndpoints/{endpoint_id}
+        endpoint_resource_name = f"projects/{PROJECT_ID}/locations/{REGION}/indexEndpoints/{ENDPOINT_ID}"
+        endpoint = aiplatform.MatchingEngineIndexEndpoint(
+            index_endpoint_name=endpoint_resource_name
+        )
         _vector_index = endpoint
     return _vector_index
+
+def load_chunks_cache():
+    """Load chunks.json to create a lookup cache for text by ID."""
+    global _chunks_cache
+    if _chunks_cache is None:
+        _chunks_cache = {}
+        # Try to load chunks.json from common locations
+        import json
+        from pathlib import Path
+        
+        # Try scripts/chunks.json (relative to rag-service)
+        chunks_paths = [
+            Path(__file__).parent.parent / "scripts" / "chunks.json",
+            Path("scripts/chunks.json"),
+            Path("../scripts/chunks.json"),
+        ]
+        
+        for chunks_path in chunks_paths:
+            if chunks_path.exists():
+                try:
+                    with open(chunks_path, 'r', encoding='utf-8') as f:
+                        chunks_data = json.load(f)
+                    # Build lookup: "file_path:chunk_index" -> text
+                    for chunk in chunks_data:
+                        file_path = chunk.get("metadata", {}).get("file_path", "")
+                        chunk_idx = chunk.get("metadata", {}).get("chunk_index", "")
+                        chunk_id = f"{file_path}:{chunk_idx}"
+                        _chunks_cache[chunk_id] = chunk.get("text", "")
+                    print(f"Loaded {len(_chunks_cache)} chunks from {chunks_path}")
+                    break
+                except Exception as e:
+                    print(f"Warning: Could not load chunks from {chunks_path}: {e}")
+        
+        if not _chunks_cache:
+            print("Warning: Could not load chunks.json - text lookup will be limited")
+    
+    return _chunks_cache
 
 # Mascot personalities
 MASCOT_PERSONALITIES = {
     "gooey": """You are Gooey, a friendly and helpful gelatinous cube mascot for Terasology. 
 You're enthusiastic about helping players and modders. You speak in a slightly quirky, 
-encouraging way. You love giving "cold hugs" (acidic embraces) to warm hearts. 
-Keep responses concise, helpful, and friendly.""",
+encouraging way. Keep responses concise, helpful, and friendly.""",
     
     "bill": """You are Bill, a pragmatic and governance-focused pig mascot for Demicracy. 
 You're knowledgeable about community governance, decision-making processes, and platform 
@@ -92,7 +168,6 @@ class AskRequest(BaseModel):
     project: str
     mascot: str
     question: str
-    context: Optional[str] = "web"
     top_k: Optional[int] = 5
 
 class AskResponse(BaseModel):
@@ -128,13 +203,43 @@ def retrieve_context(query_text: str, top_k: int = 5) -> List[Dict]:
         )
         
         # Format results
+        # MatchNeighbor has: id, distance, restricts (but metadata was stored in JSONL)
+        # We need to parse the id to get file info, and we'd need to look up full text
+        # For now, we'll use the id and note that full text retrieval would require
+        # storing a mapping or re-querying the original chunks
         context_chunks = []
         for result in results[0]:
+            doc_id = result.id
+            distance = result.distance
+            
+            # Parse ID format: "file_path:chunk_index"
+            file_path = ""
+            filename = ""
+            chunk_index = ""
+            
+            if ":" in doc_id:
+                parts = doc_id.split(":", 1)
+                file_path = parts[0]
+                chunk_index = parts[1] if len(parts) > 1 else ""
+                
+                # Extract filename from path (handle both / and \)
+                filename = file_path.replace("\\", "/").split("/")[-1]
+            
+            # Look up full text from chunks cache
+            chunks_cache = load_chunks_cache()
+            text = chunks_cache.get(doc_id, "")
+            
+            # Fallback if not in cache
+            if not text:
+                text = f"[Chunk {chunk_index} from {filename} - text not available in cache]"
+            
             context_chunks.append({
-                "text": result.metadata.get("text", ""),
-                "file_path": result.metadata.get("file_path", ""),
-                "filename": result.metadata.get("filename", ""),
-                "distance": result.distance
+                "text": text,
+                "file_path": file_path,
+                "filename": filename,
+                "distance": distance,
+                "id": doc_id,
+                "chunk_index": chunk_index
             })
         
         return context_chunks
@@ -180,10 +285,18 @@ Answer:"""
         
         # Generate response
         chat_model = get_chat_model()
-        chat = chat_model.start_chat()
-        response = chat.send_message(prompt)
         
-        return response.text
+        # Use generate_content for single-turn (simpler, may avoid deprecation warnings)
+        # Or start_chat for multi-turn conversations
+        try:
+            # Try direct generate_content first (simpler API)
+            response = chat_model.generate_content(prompt)
+            return response.text
+        except AttributeError:
+            # Fallback to chat API if generate_content doesn't work
+            chat = chat_model.start_chat()
+            response = chat.send_message(prompt)
+            return response.text
     
     except Exception as e:
         print(f"Error generating response: {e}")

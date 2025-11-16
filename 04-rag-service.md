@@ -51,41 +51,6 @@ DEPLOYED_INDEX_ID=um_deployed_index
 
 If you want to use the environment variables in your Windows shell (like `source .env` on Linux):
 
-**Option 1: PowerShell (Recommended)**
-```powershell
-# PowerShell can load .env files easily
-Get-Content .env | ForEach-Object {
-    if ($_ -match '^\s*([^#][^=]*)\s*=\s*(.*)\s*$') {
-        [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
-    }
-}
-
-# Verify variables are set
-$env:GCP_PROJECT_ID
-```
-
-**Option 2: Command Prompt Batch Script**
-
-A `load-env.bat` script is provided in the workspace root. Use it like this:
-
-```cmd
-REM Enable delayed expansion (required for the script)
-cmd /v:on
-
-REM Load variables
-call load-env.bat
-
-REM Verify
-echo %GCP_PROJECT_ID%
-```
-
-**Note**: The script requires delayed expansion. You can either:
-- Start your shell with `cmd /v:on`, or
-- Run `setlocal enabledelayedexpansion` before calling the script (but variables won't persist after `endlocal`)
-
-**Option 3: Manual set commands**
-
-For quick testing, just set them manually:
 ```cmd
 set GCP_PROJECT_ID=teralivekubernetes
 set GCP_REGION=us-east1
@@ -108,9 +73,6 @@ set VECTOR_INDEX_ID=your-index-id
 set VECTOR_ENDPOINT_ID=your-endpoint-id
 
 # Run the service
-cd rag-service
-python rag_service.py
-# On Windows:
 cd rag-service
 python rag_service.py
 ```
@@ -259,6 +221,38 @@ pip install -r requirements.txt
 ```cmd
 REM Even if venv seems active, use explicit module invocation
 python -m pip install -r rag-service\requirements.txt
+```
+
+### Issue: Gemini Model Not Found
+
+If you see errors like "Unknown model publishers/google/models/gemini-*":
+
+**Solution 1: Check available models**
+```cmd
+REM Run the model checker script
+cd scripts
+python check_gemini_models.py
+```
+
+This will test which Gemini models are available in your region and show you which one to use.
+
+**Solution 2: Enable Generative AI API**
+```cmd
+gcloud services enable generativelanguage.googleapis.com --project=%GCP_PROJECT_ID%
+gcloud services enable aiplatform.googleapis.com --project=%GCP_PROJECT_ID%
+```
+
+**Solution 3: Use Generative AI SDK (Alternative)**
+If Vertex AI ChatModel doesn't work, you can use the Generative AI SDK instead:
+```bash
+pip install google-generativeai
+```
+
+Then in `rag_service.py`, replace the ChatModel import with:
+```python
+import google.generativeai as genai
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+model = genai.GenerativeModel('gemini-pro')
 ```
 
 ### Issue: Authentication Errors
