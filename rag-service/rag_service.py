@@ -115,45 +115,65 @@ def get_chroma_collection():
     global _chroma_collection
     if _chroma_collection is None:
         # Initialize ChromaDB client (persistent mode)
-        # Try multiple paths for the database
+        # Try multiple paths for the database - prioritize workspace root
+        # Path(__file__) is rag-service/rag_service.py, so parent.parent is workspace root
+        workspace_root = Path(__file__).parent.parent
+        
         persist_paths = [
-            Path(CHROMA_PERSIST_DIR),
-            Path(__file__).parent.parent / CHROMA_PERSIST_DIR,
-            Path("chroma_db"),
-            Path("../chroma_db"),
+            workspace_root / "chroma_db",  # Workspace root (most likely location)
+            workspace_root / CHROMA_PERSIST_DIR.lstrip("./"),  # If CHROMA_PERSIST_DIR is relative
+            Path(CHROMA_PERSIST_DIR).resolve(),  # Absolute or resolved path from env
+            Path("chroma_db").resolve(),  # Current directory
+            Path("../chroma_db").resolve(),  # Parent directory
         ]
         
         client = None
+        found_path = None
+        
+        # Try each path - check if it exists AND has the collection
         for persist_path in persist_paths:
-            if persist_path.exists() or persist_path.parent.exists():
+            # Only try paths that actually exist
+            if persist_path.exists() and persist_path.is_dir():
                 try:
-                    client = chromadb.PersistentClient(
+                    test_client = chromadb.PersistentClient(
                         path=str(persist_path),
                         settings=Settings(anonymized_telemetry=False)
                     )
-                    print(f"Connected to ChromaDB at: {persist_path.absolute()}")
-                    break
+                    # Check if collection exists in this database
+                    try:
+                        test_collection = test_client.get_collection(name=CHROMA_COLLECTION_NAME)
+                        # Collection exists! Use this client
+                        client = test_client
+                        found_path = persist_path
+                        print(f"✓ Found ChromaDB at: {persist_path.absolute()}")
+                        break
+                    except Exception:
+                        # Collection doesn't exist in this database, try next path
+                        continue
                 except Exception as e:
-                    print(f"Warning: Could not connect to ChromaDB at {persist_path}: {e}")
+                    # Could not connect to this path, try next
                     continue
         
         if client is None:
-            # Create in default location
-            default_path = Path(CHROMA_PERSIST_DIR)
+            # No existing database found, create in workspace root
+            default_path = workspace_root / "chroma_db"
             default_path.mkdir(parents=True, exist_ok=True)
             client = chromadb.PersistentClient(
                 path=str(default_path),
                 settings=Settings(anonymized_telemetry=False)
             )
-            print(f"Created ChromaDB at: {default_path.absolute()}")
+            found_path = default_path
+            print(f"Created new ChromaDB at: {default_path.absolute()}")
+        else:
+            print(f"Using ChromaDB at: {found_path.absolute()}")
         
         # Get collection
         try:
             _chroma_collection = client.get_collection(name=CHROMA_COLLECTION_NAME)
-            print(f"Loaded ChromaDB collection: {CHROMA_COLLECTION_NAME} ({_chroma_collection.count()} documents)")
+            print(f"✓ Loaded ChromaDB collection: {CHROMA_COLLECTION_NAME} ({_chroma_collection.count()} documents)")
         except Exception as e:
             raise Exception(
-                f"ChromaDB collection '{CHROMA_COLLECTION_NAME}' not found. "
+                f"ChromaDB collection '{CHROMA_COLLECTION_NAME}' not found in {found_path.absolute()}. "
                 f"Please run: python scripts/load_chromadb.py scripts/embeddings-array.json\n"
                 f"Error: {e}"
             )

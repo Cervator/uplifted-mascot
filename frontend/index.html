@@ -164,7 +164,67 @@
             font-size: 14px;
             margin-top: 10px;
         }
+
+        /* Markdown styling */
+        .message-bubble h1,
+        .message-bubble h2,
+        .message-bubble h3 {
+            margin-top: 0.5em;
+            margin-bottom: 0.5em;
+        }
+
+        .message-bubble p {
+            margin: 0.5em 0;
+        }
+
+        .message-bubble code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .message-bubble pre {
+            background: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 0.5em 0;
+        }
+
+        .message-bubble pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .message-bubble ul,
+        .message-bubble ol {
+            margin: 0.5em 0;
+            padding-left: 1.5em;
+        }
+
+        .message-bubble li {
+            margin: 0.25em 0;
+        }
+
+        .message-bubble strong {
+            font-weight: 600;
+        }
+
+        .message-bubble em {
+            font-style: italic;
+        }
+
+        .message-bubble blockquote {
+            border-left: 3px solid #667eea;
+            padding-left: 1em;
+            margin: 0.5em 0;
+            color: #666;
+        }
     </style>
+    <!-- Markdown renderer -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <div class="chat-container">
@@ -217,7 +277,20 @@
             
             const bubble = document.createElement('div');
             bubble.className = 'message-bubble';
-            bubble.textContent = text;
+            
+            // Render Markdown for assistant messages, plain text for user messages
+            if (isUser) {
+                bubble.textContent = text;
+            } else {
+                // Use marked to render Markdown
+                if (typeof marked !== 'undefined') {
+                    bubble.innerHTML = marked.parse(text);
+                } else {
+                    // Fallback if marked.js didn't load
+                    bubble.textContent = text;
+                }
+            }
+            
             messageDiv.appendChild(bubble);
             
             if (sources && sources.length > 0) {

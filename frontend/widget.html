@@ -61,7 +61,41 @@
             border-radius: 5px;
             cursor: pointer;
         }
+
+        /* Markdown styling */
+        .um-message.assistant code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+
+        .um-message.assistant pre {
+            background: #f4f4f4;
+            padding: 8px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 0.5em 0;
+        }
+
+        .um-message.assistant pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .um-message.assistant ul,
+        .um-message.assistant ol {
+            margin: 0.5em 0;
+            padding-left: 1.5em;
+        }
+
+        .um-message.assistant strong {
+            font-weight: 600;
+        }
     </style>
+    <!-- Markdown renderer -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <div class="um-widget" id="umWidget">
@@ -90,7 +124,20 @@
         function addMsg(text, isUser) {
             const msg = document.createElement('div');
             msg.className = `um-message ${isUser ? 'user' : 'assistant'}`;
-            msg.textContent = text;
+            
+            // Render Markdown for assistant messages, plain text for user messages
+            if (isUser) {
+                msg.textContent = text;
+            } else {
+                // Use marked to render Markdown
+                if (typeof marked !== 'undefined') {
+                    msg.innerHTML = marked.parse(text);
+                } else {
+                    // Fallback if marked.js didn't load
+                    msg.textContent = text;
+                }
+            }
+            
             messagesDiv.appendChild(msg);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
