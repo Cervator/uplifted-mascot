@@ -98,15 +98,17 @@ export GCP_PROJECT_ID="your-project-id"
 # On Windows:
 set GCP_PROJECT_ID=your-project-id
 
-# Create embeddings
-python scripts/create_embeddings.py chunks.json embeddings-array.json
-# On Windows:
-python scripts\create_embeddings.py chunks.json embeddings-array.json
+# Create embeddings (outputs JSON array format)
+# From workspace root:
+python scripts/create_embeddings.py scripts/chunks.json scripts/embeddings-array.json
+
+# On Windows (from workspace root):
+python scripts\create_embeddings.py scripts\chunks.json scripts\embeddings-array.json
 
 # Check output size
-ls -lh embeddings-array.json
+ls -lh scripts/embeddings-array.json
 # On Windows:
-dir embeddings-array.json
+dir scripts\embeddings-array.json
 ```
 
 ## Manual Workflow Summary

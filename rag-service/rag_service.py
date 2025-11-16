@@ -13,6 +13,9 @@ from google.cloud import aiplatform
 from vertexai.language_models import TextEmbeddingModel
 from vertexai.generative_models import GenerativeModel
 from dotenv import load_dotenv
+import chromadb
+from pathlib import Path
+from chromadb.config import Settings
 
 # Load environment variables
 load_dotenv()
@@ -32,9 +35,15 @@ app.add_middleware(
 # Configuration (set via environment variables)
 PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 REGION = os.getenv("GCP_REGION", "us-east1")
-INDEX_ID = os.getenv("VECTOR_INDEX_ID")
-ENDPOINT_ID = os.getenv("VECTOR_ENDPOINT_ID")
-DEPLOYED_INDEX_ID = os.getenv("DEPLOYED_INDEX_ID", "um_deployed_index")
+
+# ChromaDB configuration
+CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "uplifted_mascot")
+CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
+
+# Legacy Vertex AI Vector Search (optional, for scaling)
+INDEX_ID = os.getenv("VECTOR_INDEX_ID")  # Optional - only if using Vertex AI Vector Search
+ENDPOINT_ID = os.getenv("VECTOR_ENDPOINT_ID")  # Optional
+DEPLOYED_INDEX_ID = os.getenv("DEPLOYED_INDEX_ID", "um_deployed_index")  # Optional
 
 # Initialize Vertex AI
 if PROJECT_ID:
@@ -43,8 +52,8 @@ if PROJECT_ID:
 # Initialize models (lazy loading)
 _embedding_model = None
 _chat_model = None
-_vector_index = None
-_chunks_cache = None  # Cache for looking up chunk text by ID
+_chroma_collection = None  # ChromaDB collection
+_vector_index = None  # Legacy Vertex AI Vector Search (optional)
 
 def get_embedding_model():
     """Get or create embedding model."""
@@ -101,10 +110,60 @@ def get_chat_model():
     
     return _chat_model
 
+def get_chroma_collection():
+    """Get or create ChromaDB collection."""
+    global _chroma_collection
+    if _chroma_collection is None:
+        # Initialize ChromaDB client (persistent mode)
+        # Try multiple paths for the database
+        persist_paths = [
+            Path(CHROMA_PERSIST_DIR),
+            Path(__file__).parent.parent / CHROMA_PERSIST_DIR,
+            Path("chroma_db"),
+            Path("../chroma_db"),
+        ]
+        
+        client = None
+        for persist_path in persist_paths:
+            if persist_path.exists() or persist_path.parent.exists():
+                try:
+                    client = chromadb.PersistentClient(
+                        path=str(persist_path),
+                        settings=Settings(anonymized_telemetry=False)
+                    )
+                    print(f"Connected to ChromaDB at: {persist_path.absolute()}")
+                    break
+                except Exception as e:
+                    print(f"Warning: Could not connect to ChromaDB at {persist_path}: {e}")
+                    continue
+        
+        if client is None:
+            # Create in default location
+            default_path = Path(CHROMA_PERSIST_DIR)
+            default_path.mkdir(parents=True, exist_ok=True)
+            client = chromadb.PersistentClient(
+                path=str(default_path),
+                settings=Settings(anonymized_telemetry=False)
+            )
+            print(f"Created ChromaDB at: {default_path.absolute()}")
+        
+        # Get collection
+        try:
+            _chroma_collection = client.get_collection(name=CHROMA_COLLECTION_NAME)
+            print(f"Loaded ChromaDB collection: {CHROMA_COLLECTION_NAME} ({_chroma_collection.count()} documents)")
+        except Exception as e:
+            raise Exception(
+                f"ChromaDB collection '{CHROMA_COLLECTION_NAME}' not found. "
+                f"Please run: python scripts/load_chromadb.py scripts/embeddings-array.json\n"
+                f"Error: {e}"
+            )
+    
+    return _chroma_collection
+
 def get_vector_index():
-    """Get or create vector index connection."""
+    """Get or create Vertex AI Vector Search index connection (legacy, optional)."""
     global _vector_index
-    if _vector_index is None:
+    if _vector_index is None and ENDPOINT_ID:
         # Use MatchingEngineIndexEndpoint from aiplatform
         # Format: projects/{project}/locations/{location}/indexEndpoints/{endpoint_id}
         endpoint_resource_name = f"projects/{PROJECT_ID}/locations/{REGION}/indexEndpoints/{ENDPOINT_ID}"
@@ -113,43 +172,6 @@ def get_vector_index():
         )
         _vector_index = endpoint
     return _vector_index
-
-def load_chunks_cache():
-    """Load chunks.json to create a lookup cache for text by ID."""
-    global _chunks_cache
-    if _chunks_cache is None:
-        _chunks_cache = {}
-        # Try to load chunks.json from common locations
-        import json
-        from pathlib import Path
-        
-        # Try scripts/chunks.json (relative to rag-service)
-        chunks_paths = [
-            Path(__file__).parent.parent / "scripts" / "chunks.json",
-            Path("scripts/chunks.json"),
-            Path("../scripts/chunks.json"),
-        ]
-        
-        for chunks_path in chunks_paths:
-            if chunks_path.exists():
-                try:
-                    with open(chunks_path, 'r', encoding='utf-8') as f:
-                        chunks_data = json.load(f)
-                    # Build lookup: "file_path:chunk_index" -> text
-                    for chunk in chunks_data:
-                        file_path = chunk.get("metadata", {}).get("file_path", "")
-                        chunk_idx = chunk.get("metadata", {}).get("chunk_index", "")
-                        chunk_id = f"{file_path}:{chunk_idx}"
-                        _chunks_cache[chunk_id] = chunk.get("text", "")
-                    print(f"Loaded {len(_chunks_cache)} chunks from {chunks_path}")
-                    break
-                except Exception as e:
-                    print(f"Warning: Could not load chunks from {chunks_path}: {e}")
-        
-        if not _chunks_cache:
-            print("Warning: Could not load chunks.json - text lookup will be limited")
-    
-    return _chunks_cache
 
 # Mascot personalities
 MASCOT_PERSONALITIES = {
@@ -177,7 +199,7 @@ class AskResponse(BaseModel):
 
 def retrieve_context(query_text: str, top_k: int = 5) -> List[Dict]:
     """
-    Retrieve relevant context from Vector Search.
+    Retrieve relevant context from ChromaDB (or Vertex AI Vector Search if configured).
     
     Args:
         query_text: User's question
@@ -191,61 +213,44 @@ def retrieve_context(query_text: str, top_k: int = 5) -> List[Dict]:
         embedding_model = get_embedding_model()
         query_embedding = embedding_model.get_embeddings([query_text])[0]
         
-        # Get vector index
-        index_endpoint = get_vector_index()
+        # Use ChromaDB (primary approach)
+        collection = get_chroma_collection()
         
-        # Query the index
-        # Note: This requires the index to be deployed
-        results = index_endpoint.find_neighbors(
-            deployed_index_id=DEPLOYED_INDEX_ID,
-            queries=[query_embedding.values],
-            num_neighbors=top_k
+        # Query ChromaDB
+        results = collection.query(
+            query_embeddings=[query_embedding.values],
+            n_results=top_k,
+            include=["documents", "metadatas", "distances"]
         )
         
         # Format results
-        # MatchNeighbor has: id, distance, restricts (but metadata was stored in JSONL)
-        # We need to parse the id to get file info, and we'd need to look up full text
-        # For now, we'll use the id and note that full text retrieval would require
-        # storing a mapping or re-querying the original chunks
         context_chunks = []
-        for result in results[0]:
-            doc_id = result.id
-            distance = result.distance
-            
-            # Parse ID format: "file_path:chunk_index"
-            file_path = ""
-            filename = ""
-            chunk_index = ""
-            
-            if ":" in doc_id:
-                parts = doc_id.split(":", 1)
-                file_path = parts[0]
-                chunk_index = parts[1] if len(parts) > 1 else ""
+        if results["ids"] and len(results["ids"]) > 0:
+            for i in range(len(results["ids"][0])):
+                doc_id = results["ids"][0][i]
+                text = results["documents"][0][i] if results["documents"] else ""
+                metadata = results["metadatas"][0][i] if results["metadatas"] else {}
+                distance = results["distances"][0][i] if results["distances"] else 0.0
                 
-                # Extract filename from path (handle both / and \)
-                filename = file_path.replace("\\", "/").split("/")[-1]
-            
-            # Look up full text from chunks cache
-            chunks_cache = load_chunks_cache()
-            text = chunks_cache.get(doc_id, "")
-            
-            # Fallback if not in cache
-            if not text:
-                text = f"[Chunk {chunk_index} from {filename} - text not available in cache]"
-            
-            context_chunks.append({
-                "text": text,
-                "file_path": file_path,
-                "filename": filename,
-                "distance": distance,
-                "id": doc_id,
-                "chunk_index": chunk_index
-            })
+                file_path = metadata.get("file_path", "")
+                filename = metadata.get("filename", file_path.replace("\\", "/").split("/")[-1])
+                chunk_index = metadata.get("chunk_index", "")
+                
+                context_chunks.append({
+                    "text": text,
+                    "file_path": file_path,
+                    "filename": filename,
+                    "distance": distance,
+                    "id": doc_id,
+                    "chunk_index": chunk_index
+                })
         
         return context_chunks
     
     except Exception as e:
         print(f"Error retrieving context: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 def generate_response(question: str, context_chunks: List[Dict], mascot: str) -> str:
@@ -314,10 +319,27 @@ def root():
 @app.get("/health")
 def health():
     """Detailed health check."""
+    try:
+        collection = get_chroma_collection()
+        chroma_status = {
+            "configured": True,
+            "collection": CHROMA_COLLECTION_NAME,
+            "document_count": collection.count()
+        }
+    except Exception as e:
+        chroma_status = {
+            "configured": False,
+            "error": str(e)
+        }
+    
     return {
         "status": "healthy",
-        "vector_index_configured": INDEX_ID is not None,
-        "endpoint_configured": ENDPOINT_ID is not None
+        "chromadb": chroma_status,
+        "vertex_ai_vector_search": {
+            "configured": INDEX_ID is not None and ENDPOINT_ID is not None,
+            "index_id": INDEX_ID,
+            "endpoint_id": ENDPOINT_ID
+        }
     }
 
 @app.post("/ask-mascot", response_model=AskResponse)
@@ -376,10 +398,17 @@ if __name__ == "__main__":
     # Validate configuration
     if not PROJECT_ID:
         raise ValueError("GCP_PROJECT_ID environment variable not set")
-    if not INDEX_ID:
-        raise ValueError("VECTOR_INDEX_ID environment variable not set")
-    if not ENDPOINT_ID:
-        raise ValueError("VECTOR_ENDPOINT_ID environment variable not set")
+    
+    # Validate ChromaDB is available
+    try:
+        get_chroma_collection()
+    except Exception as e:
+        print(f"\n⚠️  Warning: ChromaDB not configured: {e}")
+        print("\nTo set up ChromaDB:")
+        print("  1. Run: python scripts/create_embeddings.py scripts/chunks.json scripts/embeddings-array.json")
+        print("  2. Run: python scripts/load_chromadb.py scripts/embeddings-array.json")
+        print("\nOr set up Vertex AI Vector Search (see 03-vector-storage.md for scaling)")
+        raise
     
     # Run server
     uvicorn.run(app, host="0.0.0.0", port=8000)

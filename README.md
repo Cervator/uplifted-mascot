@@ -8,7 +8,7 @@ For a complete manual workflow from GitHub to working website:
 
 1. **Knowledge Base** (`01-knowledge-base.md`) - Set up your GitHub repository
 2. **Ingestion** (`02-ingestion.md`) - Process markdown files and create embeddings
-3. **Vector Storage** (`03-vector-storage.md`) - Upload embeddings to Vertex AI Vector Search
+3. **Vector Storage** (`03-vector-storage.md`) - Load embeddings into ChromaDB (free, local) or Vertex AI Vector Search (for scaling)
 4. **RAG Service** (`04-rag-service.md`) - Build and deploy the API endpoint
 5. **Frontend** (`05-frontend.md`) - Create the web interface
 
@@ -27,10 +27,10 @@ For a complete manual workflow from GitHub to working website:
 - Manual workflow commands
 
 ### 03-vector-storage.md
-- Vertex AI Vector Search setup
-- Cloud Storage bucket creation
-- Index creation and deployment
-- Query testing
+- **ChromaDB setup** (recommended - free, local, zero cost)
+- Loading embeddings into ChromaDB
+- Vertex AI Vector Search (optional, for scaling to large datasets)
+- Cost comparison and recommendations
 
 ### 04-rag-service.md
 - FastAPI service implementation
@@ -77,8 +77,10 @@ cd scripts
 python process_docs.py ../your-repo chunks.json
 python create_embeddings.py chunks.json embeddings-array.json
 
-# 4. Setup vector storage (see 03)
-# Create bucket, upload, create index
+# 4. Setup vector storage (see 03) - ChromaDB (recommended)
+# From workspace root:
+python scripts/load_chromadb.py scripts/embeddings-array.json
+# Or use Vertex AI Vector Search for scaling (see 03-vector-storage.md)
 
 # 5. Deploy RAG service (see 04)
 cd ../rag-service
@@ -92,12 +94,19 @@ cd ../frontend
 
 ## Cost Estimation
 
-With Google Developer Program Premium ($50/month credit):
+**With ChromaDB (Recommended - Free!):**
+- **Vector Storage**: $0/month (runs locally)
+- **Embedding Creation**: ~$0.10 per 1000 chunks (one-time, using Vertex AI)
+- **Query Operations**: ~$0.001-0.002 per question (Gemini API)
+- **Total**: Essentially free for development and small-scale use!
 
-- **Development/Testing**: More than sufficient
+**With Vertex AI Vector Search (For Scaling):**
+- **Vector Storage**: $72+/month (depending on machine type)
 - **Embedding Creation**: ~$0.10 per 1000 chunks
-- **Query Operations**: ~$0.001-0.002 per question
-- **Estimated Capacity**: 25,000-50,000 queries per month
+- **Query Operations**: ~$0.10 per 1K queries
+- **Best for**: Large datasets (100K+ documents) or production scaling
+
+**Recommendation**: Start with ChromaDB. It's free, fast for small datasets, and runs locally. Only move to Vertex AI Vector Search if you need to scale beyond ChromaDB's capabilities.
 
 ## Next Steps
 

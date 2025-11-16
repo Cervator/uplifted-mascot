@@ -2,189 +2,287 @@
 
 ## Overview
 
-Vertex AI Vector Search stores the document embeddings created during ingestion. This is the "brain" of the Uplifted Mascot system - it enables semantic search across your knowledge base.
+For small to medium datasets (up to a few thousand documents), we use **ChromaDB** - a self-hosted, open-source vector database that runs locally with zero cost. This is the recommended approach for development and small-scale deployments.
+
+For larger datasets or production scaling, see the [Vertex AI Vector Search](#scaling-with-vertex-ai-vector-search) section below.
 
 ## Prerequisites
 
-- GCP project with Vertex AI API enabled
 - Embeddings JSON file from ingestion step (see `02-ingestion.md`)
-- `gcloud` CLI configured
 - Python environment with required packages
 
-## Initial Setup
+## ChromaDB Setup (Recommended)
 
-### Step 1: Enable Required APIs
+### Step 1: Install ChromaDB
 
 ```bash
-# Set your project
-export GCP_PROJECT_ID="your-project-id"
-gcloud config set project $GCP_PROJECT_ID
+# Activate virtual environment
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Enable required APIs
-gcloud services enable aiplatform.googleapis.com
-gcloud services enable storage-component.googleapis.com
+# Install ChromaDB
+pip install chromadb>=0.4.0
 ```
 
-### Step 2: Create Cloud Storage Bucket
-
-Vector Search requires embeddings to be stored in Cloud Storage first.
+Or install from requirements:
 
 ```bash
-# Set variables
-export BUCKET_NAME="um-embeddings-$(date +%s)"  # Unique bucket name
-export REGION="us-east1"
-
-# Create bucket
-gsutil mb -p $GCP_PROJECT_ID -l $REGION gs://$BUCKET_NAME
-
-# Verify
-gsutil ls gs://$BUCKET_NAME
+cd scripts
+pip install -r requirements.txt
 ```
 
-### Step 3: Upload Embeddings to Cloud Storage
+### Step 2: Load Embeddings into ChromaDB
 
+**Important**: ChromaDB needs the JSON array format file (`embeddings-array.json`), NOT the JSONL file (`embeddings.json`).
+
+**File formats:**
+- `embeddings-array.json` - JSON array format (from `create_embeddings.py`) - **Use this for ChromaDB**
+- `embeddings.json` - JSONL format (from `convert_to_jsonl.py`) - Only for Vertex AI Vector Search
+
+If you don't have `embeddings-array.json`, create it first:
 ```bash
-# Upload embeddings JSON
-gsutil cp embeddings.json gs://$BUCKET_NAME/
-
-# Verify upload
-gsutil ls gs://$BUCKET_NAME/
+# From workspace root
+# Make sure you have chunks.json from process_docs.py first
+python scripts/create_embeddings.py scripts/chunks.json scripts/embeddings-array.json
 ```
 
-## Create Vector Search Index
-
-### Step 4: Prepare Index Configuration
-
-Copy the example configuration file from `config/index-config.yaml.example` and update it with your bucket name:
-
+Then load into ChromaDB:
 ```bash
-# Copy example config
-cp config/index-config.yaml.example index-config.yaml
-# On Windows:
-copy config\index-config.yaml.example index-config.yaml
+# From workspace root
+python scripts/load_chromadb.py scripts/embeddings-array.json
 
-# Edit the file and replace YOUR_BUCKET_NAME with your actual bucket name
+# Or specify custom collection name and directory
+python scripts/load_chromadb.py scripts/embeddings-array.json my_collection ./chroma_db
 ```
 
-### Step 5: Create Index Script
+**Note for Windows users**: Use forward slashes in paths, or use backslashes if needed. The Python script handles both.
 
-The index creation script is located at `scripts/create_index.py` in this repository.
+**What this does:**
+- Creates a persistent ChromaDB database in `./chroma_db` (or specified directory)
+- Creates a collection named `uplifted_mascot` (or your custom name)
+- Loads all embeddings with their text and metadata
+- Stores everything locally - no cloud costs!
 
-### Step 6: Convert Embeddings to Vector Search Format
-
-Vector Search requires a specific JSONL format. The conversion script is located at `scripts/convert_to_jsonl.py`.
-
-### Step 7: Upload in Correct Format
-
-```bash
-# Convert to JSONL (with .json extension - Vector AI requires .json extension)
-python scripts/convert_to_jsonl.py embeddings-array.json embeddings.json
-
-# Upload JSON file to bucket (must have .json extension even though content is JSONL)
-gsutil cp embeddings.json gs://$BUCKET_NAME/
+**Output:**
+```
+Loading 150 embeddings into ChromaDB...
+Adding embeddings to ChromaDB...
+✓ Successfully loaded 150 embeddings into ChromaDB
+  Collection: uplifted_mascot
+  Database location: /path/to/chroma_db
+  Total documents in collection: 150
 ```
 
-## Alternative: Simplified Approach (Manual Index Creation)
+### Step 3: Verify Setup
 
-For initial testing, you can use the `gcloud` CLI:
+The ChromaDB database is now ready. The RAG service will automatically find and use it.
 
-### Step 8: Create Index via gcloud
+**Database location:**
+- Default: `./chroma_db` (in workspace root)
+- The RAG service will search common locations automatically
 
-```bash
-# Create index configuration file
-# Note: displayName is specified via --display-name flag, not in this file
-cat > index-config.yaml << EOF
-config:
-  dimensions: 768
-  approximateNeighborsCount: 10
-  distanceMeasureType: "DOT_PRODUCT_DISTANCE"
-  algorithmConfig:
-    treeAhConfig:
-      leafNodeEmbeddingCount: 500
-      fractionLeafNodesToSearch: 0.05
-contentsDeltaUri: "gs://${BUCKET_NAME}/"
-EOF
+**Updating embeddings:**
+- To update with new documents, just re-run `load_chromadb.py`
+- ChromaDB will update the collection (you may want to delete the old collection first)
 
-# Create index (this takes 30+ minutes)
-gcloud ai indexes create \
-  --project=$GCP_PROJECT_ID \
-  --region=$REGION \
-  --display-name="uplifted-mascot-index" \
-  --metadata-file=index-config.yaml
+### Step 4: Configure RAG Service (Optional)
+
+The RAG service uses ChromaDB by default. You can customize via environment variables:
+
+```env
+# Optional - defaults shown
+CHROMA_COLLECTION_NAME=uplifted_mascot
+CHROMA_PERSIST_DIR=./chroma_db
 ```
 
-**Note**: Index creation is asynchronous and can take 30-60 minutes for large datasets.
+## Cost Comparison
 
-### Step 9: Check Index Status
+| Approach | Monthly Cost | Best For |
+|----------|-------------|----------|
+| **ChromaDB (Self-hosted)** | **$0** | Development, small datasets (<10K docs) |
+| Vertex AI Vector Search | ~$73-547/month | Large datasets, production scaling |
 
+**Recommendation**: Start with ChromaDB. It's free, fast for small datasets, and runs locally. Only move to Vertex AI Vector Search if you need to scale beyond ChromaDB's capabilities.
+
+## Troubleshooting
+
+### Issue: Collection Not Found
+
+**Error**: `ChromaDB collection 'uplifted_mascot' not found`
+
+**Solution**: Run the load script with the correct file:
 ```bash
-# List indexes
-gcloud ai indexes list --project=$GCP_PROJECT_ID --region=$REGION
-
-# Get index details
-gcloud ai indexes describe INDEX_ID \
-  --project=$GCP_PROJECT_ID \
-  --region=$REGION
+# Make sure you're using embeddings-array.json (JSON array format), not embeddings.json (JSONL format)
+python scripts/load_chromadb.py scripts/embeddings-array.json
 ```
 
-## Query the Index (Testing)
+**If you get "JSONDecodeError"**: You're using the wrong file. Use `embeddings-array.json` (JSON array), not `embeddings.json` (JSONL).
 
-### Step 10: Test Query Script
+### Issue: Database Location
 
-The query script is located at `scripts/query_index.py` in this repository.
+The RAG service searches for ChromaDB in these locations (in order):
+1. `./chroma_db` (workspace root)
+2. `../chroma_db` (parent directory)
+3. Path specified in `CHROMA_PERSIST_DIR` environment variable
 
-## Manual Workflow Summary
+Make sure your ChromaDB database is in one of these locations, or set `CHROMA_PERSIST_DIR` in your `.env` file.
 
+### Issue: Updating Embeddings
+
+To update with new documents:
+1. Re-run the ingestion pipeline to create new embeddings
+2. Delete the old ChromaDB collection (or use a new collection name)
+3. Re-run `load_chromadb.py`
+
+Or use ChromaDB's update API programmatically.
+
+## Next Steps
+
+Once ChromaDB is set up:
+1. **Proceed to RAG Service** - See `04-rag-service.md` to build the API endpoint
+2. The RAG service will automatically use ChromaDB - no additional configuration needed!
+
+---
+
+## Scaling with Vertex AI Vector Search
+
+For large datasets (10K+ documents) or production deployments requiring high availability, you can use Google Cloud's Vertex AI Vector Search instead of ChromaDB.
+
+**When to use Vertex AI Vector Search:**
+- Very large datasets (100K+ documents)
+- Need for managed, scalable infrastructure
+- Multi-region deployment requirements
+- High query throughput needs
+
+**Cost**: ~$73-547/month depending on machine type (see cost management section)
+
+### Setup Instructions
+
+**Prerequisites**: Set these environment variables in your shell:
+- `GCP_PROJECT_ID` - Your GCP project ID
+- `GCP_REGION` - Your region (e.g., `us-east1`)
+
+**On Windows**: Set variables with `set VARIABLE=value` in Command Prompt, or use your `.env` file loader (see `04-rag-service.md`). The `gcloud` commands work the same on Windows.
+
+1. **Create Cloud Storage Bucket**
+
+   First, set a unique bucket name:
+   ```bash
+   # Linux/Mac: Generate unique name with date
+   export BUCKET_NAME="um-embeddings-$(date +%Y%m%d)"
+   
+   # Windows: Set manually (replace YYYYMMDD with today's date)
+   # set BUCKET_NAME=um-embeddings-20241114
+   ```
+
+   Then create the bucket:
+   ```bash
+   gsutil mb -p $GCP_PROJECT_ID -l $GCP_REGION gs://$BUCKET_NAME
+   ```
+
+2. **Convert Embeddings to JSONL Format**
+
+   **Important**: Vertex AI requires the file to have a `.json` extension even though the content is JSONL format.
+
+   ```bash
+   python scripts/convert_to_jsonl.py embeddings-array.json embeddings.json
+   ```
+
+3. **Upload to Cloud Storage**
+   ```bash
+   gsutil cp embeddings.json gs://$BUCKET_NAME/
+   ```
+
+4. **Create Index Configuration**
+
+   Copy the example file and edit it:
+   ```bash
+   cp config/index-config.yaml.example index-config.yaml
+   # On Windows: copy config\index-config.yaml.example index-config.yaml
+   ```
+
+   Edit `index-config.yaml` and replace `YOUR_BUCKET_NAME` with your actual bucket name.
+
+5. **Create Index**
+   ```bash
+   gcloud ai indexes create \
+     --project=$GCP_PROJECT_ID \
+     --region=$GCP_REGION \
+     --display-name="uplifted-mascot-index" \
+     --metadata-file=index-config.yaml
+   ```
+
+   **Note**: This takes 30-60 minutes. Save the operation ID from the output to check status later.
+
+6. **Create Endpoint and Deploy**
+
+   Create the endpoint:
+   ```bash
+   gcloud ai index-endpoints create \
+     --project=$GCP_PROJECT_ID \
+     --region=$GCP_REGION \
+     --display-name="um-endpoint"
+   ```
+
+   Save the `ENDPOINT_ID` from the output to your `.env` file.
+
+   Deploy the index (use `e2-standard-2` for development to minimize costs):
+   ```bash
+   gcloud ai index-endpoints deploy-index ENDPOINT_ID \
+     --project=$GCP_PROJECT_ID \
+     --region=$GCP_REGION \
+     --deployed-index-id="um_deployed_index" \
+     --display-name="um_deployed_index" \
+     --index=INDEX_ID \
+     --machine-type="e2-standard-2"
+   ```
+
+   Save the `INDEX_ID` from step 5 to your `.env` file.
+
+7. **Configure RAG Service**
+
+   Add to your `.env` file:
+   ```env
+   VECTOR_INDEX_ID=your-index-id
+   VECTOR_ENDPOINT_ID=your-endpoint-id
+   DEPLOYED_INDEX_ID=um_deployed_index
+   ```
+
+**Note**: The RAG service will automatically use Vertex AI Vector Search if these environment variables are set, otherwise it defaults to ChromaDB.
+
+### Troubleshooting Vertex AI Vector Search
+
+**Issue: `FAILED_PRECONDITION` error when creating index**
+
+Check:
+1. **Bucket exists and is accessible:**
+   ```bash
+   gsutil ls gs://$BUCKET_NAME
+   ```
+
+2. **JSON file is uploaded (must have `.json` extension):**
+   ```bash
+   gsutil ls gs://$BUCKET_NAME/embeddings.json
+   ```
+
+3. **Bucket region matches index region:**
+   ```bash
+   gsutil ls -L -b gs://$BUCKET_NAME | grep Location
+   ```
+
+4. **Grant Vertex AI service account access:**
+   ```bash
+   # Get your project number
+   PROJECT_NUMBER=$(gcloud projects describe $GCP_PROJECT_ID --format="value(projectNumber)")
+   
+   # Grant access
+   gsutil iam ch serviceAccount:service-$PROJECT_NUMBER@gcp-sa-aiplatform.iam.gserviceaccount.com:roles/storage.objectViewer gs://$BUCKET_NAME
+   ```
+
+**Issue: Long creation time**
+
+Normal: Index creation takes 30-60 minutes for large datasets. Check status:
 ```bash
-# 1. Setup
-export GCP_PROJECT_ID="your-project-id"
-export REGION="us-east1"
-export BUCKET_NAME="um-embeddings-$(date +%s)"
-
-# 2. Create bucket
-gsutil mb -p $GCP_PROJECT_ID -l $REGION gs://$BUCKET_NAME
-
-# 3. Convert and upload embeddings
-python scripts/convert_to_jsonl.py embeddings-array.json embeddings.json
-gsutil cp embeddings.json gs://$BUCKET_NAME/
-
-# 4. Create index (takes 30+ minutes)
-gcloud ai indexes create \
-  --project=$GCP_PROJECT_ID \
-  --region=$REGION \
-  --display-name="uplifted-mascot-index" \
-  --metadata-file=index-config.yaml
-
-# 5. Check status
-gcloud ai indexes list --project=$GCP_PROJECT_ID --region=$REGION
-
-# 6. Note the INDEX_ID for use in RAG service
-```
-
-## Important Notes
-
-### Index Deployment
-
-After creating an index, you need to deploy it to an endpoint before querying:
-
-```bash
-# Create endpoint (just a container - no compute costs yet)
-gcloud ai index-endpoints create \
-  --project=$GCP_PROJECT_ID \
-  --region=$REGION \
-  --display-name="um-endpoint"
-
-# Deploy index to endpoint
-# IMPORTANT: The machine type is set HERE during deployment, not during endpoint creation
-# Use --machine-type="e2-standard-2" for development to minimize costs!
-# e2-standard-16 costs ~$0.75/hour vs e2-standard-2 at ~$0.10/hour
-gcloud ai index-endpoints deploy-index ENDPOINT_ID \
-  --project=$GCP_PROJECT_ID \
-  --region=$REGION \
-  --deployed-index-id="um_deployed_index" \
-  --display-name="um_deployed_index" \
-  --index=INDEX_ID \
-  --machine-type="e2-standard-2"
+gcloud ai indexes list --project=$GCP_PROJECT_ID --region=$GCP_REGION
 ```
 
 ### Cost Management
@@ -197,32 +295,32 @@ gcloud ai index-endpoints deploy-index ENDPOINT_ID \
 
 **To reduce costs:**
 
-1. **Delete endpoint when not in use** (stops all costs):
-   ```bash
-   # Delete the entire endpoint (index data is preserved)
-   gcloud ai index-endpoints delete ENDPOINT_ID \
-     --project=$GCP_PROJECT_ID \
-     --region=$REGION
-   
-   # When needed again, recreate endpoint and redeploy index
-   ```
-
-2. **Undeploy index** (stops compute costs, endpoint remains but costs nothing):
+1. **Undeploy index** (stops compute costs, endpoint remains but costs nothing):
    ```bash
    # Undeploy the index (stops compute costs)
    gcloud ai index-endpoints undeploy-index ENDPOINT_ID \
      --project=$GCP_PROJECT_ID \
-     --region=$REGION \
+     --region=$GCP_REGION \
      --deployed-index-id="um_deployed_index"
    
    # When needed again, redeploy with smaller machine type
    gcloud ai index-endpoints deploy-index ENDPOINT_ID \
      --project=$GCP_PROJECT_ID \
-     --region=$REGION \
+     --region=$GCP_REGION \
      --deployed-index-id="um_deployed_index" \
      --display-name="um_deployed_index" \
      --index=INDEX_ID \
      --machine-type="e2-standard-2"
+   ```
+
+2. **Delete endpoint when not in use** (stops all costs):
+   ```bash
+   # Delete the entire endpoint (index data is preserved)
+   gcloud ai index-endpoints delete ENDPOINT_ID \
+     --project=$GCP_PROJECT_ID \
+     --region=$GCP_REGION
+   
+   # When needed again, recreate endpoint and redeploy index
    ```
 
 ### Cost Considerations
@@ -234,45 +332,3 @@ gcloud ai index-endpoints deploy-index ENDPOINT_ID \
 - **Your $50 credit**: Will be consumed quickly by endpoint compute costs if using large machine types!
 
 **Recommendation**: Use `e2-standard-2` for development, and undeploy when not actively testing.
-
-## Troubleshooting
-
-### Issue: Index Creation Fails
-
-**Check**:
-- Bucket exists and is accessible
-- JSONL format is correct
-- Embedding dimensions match (768 for textembedding-gecko@001)
-
-### Issue: Long Creation Time
-
-**Normal**: Index creation can take 30-60 minutes for large datasets. Check status periodically.
-
-### Issue: Query Errors
-
-**Solution**: Ensure index is deployed to an endpoint before querying.
-
-## Next Steps
-
-Once your index is created and deployed:
-
-1. **Note the Index ID and Endpoint ID** - You'll need these for the RAG service
-2. **Proceed to RAG Service** - See `04-rag-service.md` to build the API endpoint
-
-## Save Configuration
-
-Create a config file with your setup:
-
-```bash
-cat > vector-config.json << EOF
-{
-  "project_id": "$GCP_PROJECT_ID",
-  "region": "$REGION",
-  "bucket_name": "$BUCKET_NAME",
-  "index_id": "YOUR_INDEX_ID",
-  "endpoint_id": "YOUR_ENDPOINT_ID",
-  "deployed_index_id": "um_deployed_index"
-}
-EOF
-```
-

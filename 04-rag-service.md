@@ -2,12 +2,13 @@
 
 ## Overview
 
-The RAG (Retrieval-Augmented Generation) Service is the API endpoint that powers the Uplifted Mascot. It receives user questions, retrieves relevant context from Vector Search, and generates responses using Vertex AI Gemini.
+The RAG (Retrieval-Augmented Generation) Service is the API endpoint that powers the Uplifted Mascot. It receives user questions, retrieves relevant context from ChromaDB (or Vertex AI Vector Search for scaling), and generates responses using Vertex AI Gemini.
 
 ## Prerequisites
 
-- Vector Search index created and deployed (see `03-vector-storage.md`)
-- GCP project with Vertex AI API enabled
+- **ChromaDB database loaded** (see `03-vector-storage.md`) - **Recommended for development**
+- OR Vertex AI Vector Search index created and deployed (optional, for scaling)
+- GCP project with Vertex AI API enabled (for embeddings and Gemini)
 - Python 3.9+ environment
 - GKE cluster (for deployment) or local testing setup
 
@@ -24,23 +25,53 @@ cd rag-service
 pip install -r requirements.txt
 ```
 
-### Step 2: Create Environment File
+### Step 2: Set Up Vector Storage
 
-**Important**: Before creating the `.env` file, make sure you have:
-1. **INDEX_ID** - From your Vector Search index (see `03-vector-storage.md`)
-2. **ENDPOINT_ID** - From deploying your index to an endpoint (see `03-vector-storage.md` - Index Deployment section)
+**Option A: ChromaDB (Recommended - Free, Local)**
+
+1. Make sure you have `scripts/embeddings-array.json` (JSON array format from `create_embeddings.py`)
+   - If you only have `embeddings.json` (JSONL format), regenerate: `python scripts/create_embeddings.py scripts/chunks.json scripts/embeddings-array.json`
+
+2. Load embeddings into ChromaDB (from workspace root):
+   ```bash
+   python scripts/load_chromadb.py scripts/embeddings-array.json
+   ```
+
+3. That's it! The RAG service will automatically find and use ChromaDB.
+
+**Option B: Vertex AI Vector Search (For Scaling)**
+
+If you need Vertex AI Vector Search for large datasets:
+1. Set up Vector Search index (see `03-vector-storage.md` - Scaling section)
+2. Add these to your `.env` file (optional):
+   ```env
+   VECTOR_INDEX_ID=your-index-id
+   VECTOR_ENDPOINT_ID=your-endpoint-id
+   DEPLOYED_INDEX_ID=um_deployed_index
+   ```
+
+### Step 3: Create Environment File
 
 The `.env` file works on Windows just like on Linux/Mac. Python's `python-dotenv` library (already in requirements.txt) automatically loads it.
 
 Create the `.env` file at the root of the workspace with this content:
 
 ```env
+# Required
 GCP_PROJECT_ID=your-project-id
 GCP_REGION=us-east1
-VECTOR_INDEX_ID=your-index-id
-VECTOR_ENDPOINT_ID=your-endpoint-id
-DEPLOYED_INDEX_ID=um_deployed_index
+
+# ChromaDB (optional - defaults shown)
+CHROMA_COLLECTION_NAME=uplifted_mascot
+CHROMA_PERSIST_DIR=./chroma_db
+
+# Vertex AI Vector Search (optional - only if using for scaling)
+# VECTOR_INDEX_ID=your-index-id
+# VECTOR_ENDPOINT_ID=your-endpoint-id
+# DEPLOYED_INDEX_ID=um_deployed_index
 ```
+
+**Note**: The RAG service uses ChromaDB by default. It will only use Vertex AI Vector Search if `VECTOR_INDEX_ID` and `VECTOR_ENDPOINT_ID` are set in `.env`.
 
 
 **Note**: 
@@ -60,17 +91,11 @@ set VECTOR_ENDPOINT_ID=your-endpoint-id
 
 **Note**: For the RAG service, you don't need to load `.env` into your shell - `python-dotenv` handles it automatically when Python runs. These methods are only if you want the variables available in your shell for other commands.
 
-### Step 3: Run Locally
+### Step 4: Run Locally
 
 ```bash
-# Set environment variables
-export GCP_PROJECT_ID="your-project-id"
-export VECTOR_INDEX_ID="your-index-id"
-export VECTOR_ENDPOINT_ID="your-endpoint-id"
-# On Windows:
-set GCP_PROJECT_ID=your-project-id
-set VECTOR_INDEX_ID=your-index-id
-set VECTOR_ENDPOINT_ID=your-endpoint-id
+# Make sure .env file is set up (see Step 3)
+# The service will automatically load it
 
 # Run the service
 cd rag-service
@@ -79,7 +104,15 @@ python rag_service.py
 
 The service will be available at `http://localhost:8000`
 
-### Step 4: Test the API
+**What happens on startup:**
+- Loads configuration from `.env`
+- Connects to ChromaDB (or Vertex AI Vector Search if configured)
+- Initializes Vertex AI for embeddings and Gemini
+- Validates that vector storage is available
+
+If ChromaDB is not found, you'll see an error with instructions to run `load_chromadb.py`.
+
+### Step 5: Test the API
 
 ```bash
 # Health check
@@ -265,12 +298,28 @@ gcloud auth application-default login
 python -c "from google.cloud import aiplatform; print('Auth OK')"
 ```
 
-### Issue: Index Not Found
+### Issue: ChromaDB Collection Not Found
+
+**Error**: `ChromaDB collection 'uplifted_mascot' not found`
+
+**Solution**: Load embeddings into ChromaDB (make sure you're using `embeddings-array.json`, not `embeddings.json`):
+```bash
+# From workspace root
+python scripts/load_chromadb.py scripts/embeddings-array.json
+```
 
 **Check**:
-- INDEX_ID and ENDPOINT_ID are correct
+- ChromaDB database exists in `./chroma_db` (or path specified in `CHROMA_PERSIST_DIR`)
+- Collection name matches `CHROMA_COLLECTION_NAME` in `.env` (default: `uplifted_mascot`)
+- You've run `load_chromadb.py` after creating embeddings
+
+### Issue: Vertex AI Vector Search Not Found (If Using for Scaling)
+
+**Check**:
+- INDEX_ID and ENDPOINT_ID are set in `.env`
 - Index is deployed to endpoint
 - Region matches
+- Endpoint is not undeployed
 
 ### Issue: Slow Responses
 
