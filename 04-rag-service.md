@@ -54,22 +54,7 @@ If you need Vertex AI Vector Search for large datasets:
 
 The `.env` file works on Windows just like on Linux/Mac. Python's `python-dotenv` library (already in requirements.txt) automatically loads it.
 
-Create the `.env` file at the root of the workspace with this content:
-
-```env
-# Required
-GCP_PROJECT_ID=your-project-id
-GCP_REGION=us-east1
-
-# ChromaDB (optional - defaults shown)
-CHROMA_COLLECTION_NAME=uplifted_mascot
-CHROMA_PERSIST_DIR=./chroma_db
-
-# Vertex AI Vector Search (optional - only if using for scaling)
-# VECTOR_INDEX_ID=your-index-id
-# VECTOR_ENDPOINT_ID=your-endpoint-id
-# DEPLOYED_INDEX_ID=um_deployed_index
-```
+Create the `.env` file at the root of the workspace, see `.env.template` for a file you can copy
 
 **Note**: The RAG service uses ChromaDB by default. It will only use Vertex AI Vector Search if `VECTOR_INDEX_ID` and `VECTOR_ENDPOINT_ID` are set in `.env`.
 
@@ -85,8 +70,8 @@ If you want to use the environment variables in your Windows shell (like `source
 ```cmd
 set GCP_PROJECT_ID=teralivekubernetes
 set GCP_REGION=us-east1
-set VECTOR_INDEX_ID=1385072389695471616
-set VECTOR_ENDPOINT_ID=your-endpoint-id
+set VECTOR_INDEX_ID=1234
+set VECTOR_ENDPOINT_ID=1234
 ```
 
 **Note**: For the RAG service, you don't need to load `.env` into your shell - `python-dotenv` handles it automatically when Python runs. These methods are only if you want the variables available in your shell for other commands.
@@ -114,6 +99,8 @@ If ChromaDB is not found, you'll see an error with instructions to run `load_chr
 
 ### Step 5: Test the API
 
+You can also do this from the Swagger API url
+
 ```bash
 # Health check
 curl http://localhost:8000/health
@@ -132,7 +119,7 @@ curl -X POST http://localhost:8000/ask-mascot \
 ## API Documentation
 
 Once running, visit:
-- **Swagger UI**: `http://localhost:8000/docs`
+- **Swagger**: `http://localhost:8000/docs`
 - **ReDoc**: `http://localhost:8000/redoc`
 
 ## Deployment to GKE
@@ -159,14 +146,7 @@ docker push %IMAGE_NAME%:latest
 
 ### Step 6: Deploy to GKE
 
-The Kubernetes deployment file is located at `rag-service/k8s-deployment.yaml`. Edit it and update with your values:
-
-```bash
-# Edit the file and update:
-# - YOUR_PROJECT_ID
-# - Environment variable values
-notepad rag-service\k8s-deployment.yaml
-```
+The Kubernetes deployment file is located at `rag-service/k8s-deployment.yaml`. Edit it and update with your values
 
 Deploy:
 
@@ -183,6 +163,8 @@ kubectl get service um-rag-service
 ```
 
 ## Manual Testing Workflow
+
+You can also do this via Swagger or just run the minimal front-end real quick
 
 ```bash
 # 1. Start service locally
