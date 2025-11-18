@@ -16,7 +16,7 @@ pipeline {
     }
     
     environment {
-        GCP_PROJECT_ID = credentials('gcp-project-id')
+        GCP_PROJECT_ID = 'teralivekubernetes'
         GCP_REGION = 'us-east1'
         GAR_BASE_URL = "${GCP_REGION}-docker.pkg.dev"
         GAR_REPOSITORY = "uplifted-mascot"
@@ -127,7 +127,7 @@ pipeline {
             echo "Deployment successful! RAG service available at configured ingress URL"
         }
         failure {
-            echo "Deployment failed. Check logs: kubectl logs -l app=um-rag-service -n ${K8S_NAMESPACE}"
+            echo "Deployment failed. Check logs: kubectl logs -l app=um-rag-service -n ${env.K8S_NAMESPACE}"
         }
     }
 }
