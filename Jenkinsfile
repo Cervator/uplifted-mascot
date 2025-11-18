@@ -34,8 +34,18 @@ pipeline {
         
         stage('Build Docker') {
             steps {
-                dir('rag-service') {
-                    sh "docker build -f Dockerfile -t ${FULL_IMAGE_NAME} ."
+                script {
+                    // Authenticate with GAR to pull base image and push final image
+                    withCredentials([file(credentialsId: 'jenkins-gar-sa', variable: 'GOOGLE_APPLICATION_CREDENTIALS')]) {
+                        sh """
+                            # Login to GAR (needed to pull base image and push final image)
+                            cat \${GOOGLE_APPLICATION_CREDENTIALS} | docker login -u _json_key --password-stdin https://${GAR_BASE_URL}
+                            
+                            # Build the image (will pull base image from GAR)
+                            cd rag-service
+                            docker build -f Dockerfile -t ${FULL_IMAGE_NAME} .
+                        """
+                    }
                 }
             }
         }
@@ -43,7 +53,7 @@ pipeline {
         stage('Push Docker') {
             steps {
                 script {
-                    // Authenticate with GAR using the service account key then push
+                    // Re-authenticate and push (docker login persists in same stage, but being explicit)
                     withCredentials([file(credentialsId: 'jenkins-gar-sa', variable: 'GOOGLE_APPLICATION_CREDENTIALS')]) {
                         sh """
                             cat \${GOOGLE_APPLICATION_CREDENTIALS} | docker login -u _json_key --password-stdin https://${GAR_BASE_URL}
