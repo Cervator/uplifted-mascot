@@ -18,6 +18,39 @@ pipeline {
             }
         }
         
+        stage('Install Dependencies') {
+            steps {
+                container('builder') {
+                    script {
+                        // Install from requirements.txt (fast if already in base image)
+                        // This ensures we have all dependencies even if base image is slightly out of date
+                        sh '''
+                            cd scripts
+                            
+                            # Install dependencies and capture output
+                            pip install --no-cache-dir -r requirements.txt 2>&1 | tee /tmp/pip-install.log
+                            
+                            # Check if any packages were actually installed (not just "already satisfied")
+                            echo "Checking for dependencies that weren't in base image..."
+                            NEW_PACKAGES=$(grep -E "Successfully installed|Collecting|Installing" /tmp/pip-install.log | grep -v "already satisfied" | grep -v "Requirement already satisfied" | head -20 || true)
+                            
+                            if [ -n "$NEW_PACKAGES" ]; then
+                                echo ""
+                                echo "⚠️  WARNING: The following packages were installed during build (not in base image):"
+                                echo "$NEW_PACKAGES" | sed 's/^/   /'
+                                echo ""
+                                echo "⚠️  Consider adding these to jenkins-python-ai-agent/requirements.txt and rebuilding the base image"
+                                echo "⚠️  This will speed up future builds. See: jenkins-agent/Jenkinsfile"
+                                echo ""
+                            else
+                                echo "✓ All dependencies were already in base image - installation was fast!"
+                            fi
+                        '''
+                    }
+                }
+            }
+        }
+        
         stage('Process Documents') {
             steps {
                 container('builder') {

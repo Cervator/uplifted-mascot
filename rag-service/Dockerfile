@@ -3,7 +3,12 @@ FROM us-east1-docker.pkg.dev/teralivekubernetes/logistics/jenkins-python-ai-agen
 
 WORKDIR /app
 
-# Dependencies are already installed in the base image, just copy application code
+# Copy requirements and install (will be fast if already in base image)
+# This ensures we have all dependencies even if base image is slightly out of date
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
 COPY rag_service.py .
 
 # Expose port

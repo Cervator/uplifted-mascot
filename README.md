@@ -11,6 +11,16 @@ flowchart TB
         GitRepo["📦 GitHub Repository<br/>(Markdown Docs)"]
     end
     
+    subgraph K8S["☸️ Kubernetes Cluster"]
+        ChromaDBService["💾 ChromaDB Service"]
+        RAGService["🎭 RAG Service<br/>(FastAPI)"]
+        Frontend["🌐 Frontend<br/>(Nginx)"]
+        Ingress["🔀 Ingress<br/>(HTTPS)"]
+        PVC["💿 PVC<br/>(ChromaDB data)"]
+        
+        ChromaDBService -.->|Persistent storage| PVC
+    end
+    
     subgraph CI["🔄 CI/CD Pipeline (Jenkins)"]
         IngestionJob["📥 Ingestion Job<br/>(on Git push)"]
         BuildJob["🔨 Build Job<br/>(on code change)"]
@@ -20,16 +30,6 @@ flowchart TB
         VertexEmbed -->|3. Load into| ChromaDBService
         
         BuildJob -->|Build & push| GAR["📦 GAR<br/>(Artifact Registry)"]
-    end
-    
-    subgraph K8S["☸️ Kubernetes Cluster"]
-        ChromaDBService["💾 ChromaDB Service"]
-        RAGService["🎭 RAG Service<br/>(FastAPI)"]
-        Frontend["🌐 Frontend<br/>(Nginx)"]
-        Ingress["🔀 Ingress<br/>(HTTPS)"]
-        PVC["💿 PVC<br/>(ChromaDB data)"]
-        
-        ChromaDBService -.->|Persistent storage| PVC
     end
     
     subgraph AI["🤖 AI Services (GCP)"]
@@ -44,6 +44,7 @@ flowchart TB
     
     %% Ingestion flow (blue, dashed)
     GitRepo -.->|git push triggers| IngestionJob
+    IngestionJob -.->|loads into| ChromaDBService
     ChromaDBService -.->|stores| PVC
     
     %% Build flow (green)
@@ -54,7 +55,7 @@ flowchart TB
     WebUser -->|HTTPS| Ingress
     GameUser -->|API| Ingress
     Ingress --> Frontend
-    Frontend -->|/api/*| RAGService
+    Frontend -->|/ask-mascot| RAGService
     
     RAGService -->|1. Embed question| VertexEmbed
     RAGService -->|2. Query vectors| ChromaDBService

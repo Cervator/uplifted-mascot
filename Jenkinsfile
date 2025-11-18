@@ -42,8 +42,27 @@ pipeline {
                             cat \${GOOGLE_APPLICATION_CREDENTIALS} | docker login -u _json_key --password-stdin https://${GAR_BASE_URL}
                             
                             # Build the image (will pull base image from GAR)
+                            # Dependencies will be installed from requirements.txt (fast if already in base image)
                             cd rag-service
-                            docker build -f Dockerfile -t ${FULL_IMAGE_NAME} .
+                            
+                            # Capture build output to detect newly installed packages
+                            docker build -f Dockerfile -t ${FULL_IMAGE_NAME} . 2>&1 | tee /tmp/docker-build.log
+                            
+                            # Check if any packages were actually installed (not just "already satisfied")
+                            echo "Checking for dependencies that weren't in base image..."
+                            NEW_PACKAGES=\$(grep -E "Successfully installed|Collecting|Installing" /tmp/docker-build.log | grep -v "already satisfied" | grep -v "Requirement already satisfied" | head -20 || true)
+                            
+                            if [ -n "\$NEW_PACKAGES" ]; then
+                                echo ""
+                                echo "⚠️  WARNING: The following packages were installed during build (not in base image):"
+                                echo "\$NEW_PACKAGES" | sed 's/^/   /'
+                                echo ""
+                                echo "⚠️  Consider adding these to jenkins-python-ai-agent/requirements.txt and rebuilding the base image"
+                                echo "⚠️  This will speed up future builds. See: jenkins-agent/Jenkinsfile"
+                                echo ""
+                            else
+                                echo "✓ All dependencies were already in base image - build was fast!"
+                            fi
                         """
                     }
                 }

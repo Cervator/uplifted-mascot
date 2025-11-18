@@ -17,7 +17,7 @@ This guide covers deploying the Uplifted Mascot system to Kubernetes. **Everythi
 │  │              │    │              │    │              │   │
 │  │ Port: 8000   │◄───┤ Port: 8000   │◄───┤ Port: 80     │   │
 │  │              │    │              │    │              │   │
-│  │ PVC: 5Gi     │    │ Connects via │    │ Proxies /api │   │
+│  │ PVC: 5Gi     │    │ Connects via │    │ Proxies API  │   │
 │  │ (persistent) │    │ HTTP to      │    │ to RAG       │   │
 │  └──────────────┘    │ ChromaDB     │    └──────┬───────┘   │
 │         ▲            └──────────────┘           │           │
@@ -34,8 +34,8 @@ This guide covers deploying the Uplifted Mascot system to Kubernetes. **Everythi
 **Components**:
 - **ChromaDB**: **Standalone service** in its own pod with persistent storage (PVC). Runs as a separate deployment with ClusterIP service accessible at `chromadb:8000` within the cluster.
 - **RAG Service**: Separate pod running FastAPI. Connects to ChromaDB via HTTP (using `chromadb:8000` service name). Exposed as ClusterIP service `um-rag-service:80` (internal only).
-- **Frontend**: Nginx pod serving static HTML. Proxies `/api/*` requests to the RAG service. Exposed via Ingress.
-- **Ingress**: Exposes frontend via HTTPS to the internet. Routes `/` to frontend, which then proxies `/api/*` to RAG service.
+- **Frontend**: Nginx pod serving static HTML. Proxies API requests (e.g., `/ask-mascot`, `/health`) directly to the RAG service. Exposed via Ingress.
+- **Ingress**: Exposes frontend via HTTPS to the internet. Routes `/` to frontend, which then proxies API endpoints to RAG service.
 
 **Data Flow**:
 1. **Ingestion** (Jenkins job on git push): Creates embeddings → Loads into ChromaDB service via HTTP
