@@ -519,16 +519,17 @@ def ask_mascot(request: Request, request_body: AskRequest):
     avg_distance = sum(chunk["distance"] for chunk in context_chunks) / len(context_chunks)
     confidence = max(0.0, min(1.0, 1.0 - avg_distance))  # Convert distance to confidence
     
-    preview = response_text.replace("\n", " ")[:200]
+    preview = response_text.replace("\n", " ")[:500]
     logger.info(
-        "ask-mascot response ip=%s mascot=%s top_k=%s chunks=%d confidence=%.2f preview=\"%s%s\"",
+        "ask-mascot response ip=%s mascot=%s top_k=%s chunks=%d confidence=%.2f question=\"%s\" preview=\"%s%s\"",
         client_ip,
         request_body.mascot,
         request_body.top_k,
         len(context_chunks),
         confidence,
+        request_body.question.strip(),
         preview,
-        "..." if len(response_text) > 200 else "",
+        "..." if len(response_text) > 500 else "",
     )
     
     return AskResponse(

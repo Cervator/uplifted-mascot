@@ -128,22 +128,12 @@ pipeline {
                             sh """
                                 kubectl apply -f k8s/ingress.yaml -n ${K8S_NAMESPACE}
                             """
-                            /*
-                            // Wait for rollouts
+
+                            // Force restart to get "latest"
                             sh """
-                                kubectl rollout status deployment/chromadb -n ${K8S_NAMESPACE} --timeout=2m || true
-                                kubectl rollout status deployment/um-rag-service -n ${K8S_NAMESPACE} --timeout=5m
-                                kubectl rollout status deployment/um-frontend -n ${K8S_NAMESPACE} --timeout=2m || true
+                                kubectl rollout restart deployment/um-rag-service -n ${K8S_NAMESPACE}
+                                kubectl rollout restart deployment/um-frontend -n ${K8S_NAMESPACE}
                             """
-                            
-                            // Show deployment status
-                            sh """
-                                echo "=== Deployment Status ==="
-                                kubectl get pods -n ${K8S_NAMESPACE}
-                                kubectl get svc -n ${K8S_NAMESPACE}
-                                kubectl get ingress -n ${K8S_NAMESPACE}
-                            """
-                            */
                         }
                     }
                 }
