@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: um-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod" 
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - mascot.terasology.io  # Adjust to your desired subdomain
+    secretName: um-tls-secret
+  rules:
+  - host: mascot.terasology.io  # Adjust to your desired subdomain
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: um-frontend
+            port:
+              number: 80
+      # API is proxied through frontend nginx, but you can also expose directly:
+      # - path: /api
+      #   pathType: Prefix
+      #   backend:
+      #     service:
+      #       name: um-rag-service
+      #       port:
+      #         number: 80
+

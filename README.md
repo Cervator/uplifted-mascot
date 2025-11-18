@@ -2,6 +2,84 @@
 
 This directory contains the technical implementation guides for the Uplifted Mascot system, broken down into 5 major components.
 
+## System Architecture
+
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#fff', 'primaryTextColor':'#000', 'primaryBorderColor':'#333', 'lineColor':'#666'}}}%%
+flowchart TB
+    subgraph SOURCE["📚 Knowledge Base"]
+        GitRepo["📦 GitHub Repository<br/>(Markdown Docs)"]
+    end
+    
+    subgraph CI["🔄 CI/CD Pipeline (Jenkins)"]
+        IngestionJob["📥 Ingestion Job<br/>(on Git push)"]
+        BuildJob["🔨 Build Job<br/>(on code change)"]
+        
+        IngestionJob -->|1. Clone repo| ProcessDocs["⚙️ Process Docs<br/>(chunking)"]
+        ProcessDocs -->|2. Create embeddings| VertexEmbed["🔤 Vertex AI<br/>Embeddings API"]
+        VertexEmbed -->|3. Load into| ChromaDBService
+        
+        BuildJob -->|Build & push| GAR["📦 GAR<br/>(Artifact Registry)"]
+    end
+    
+    subgraph K8S["☸️ Kubernetes Cluster"]
+        ChromaDBService["💾 ChromaDB Service"]
+        RAGService["🎭 RAG Service<br/>(FastAPI)"]
+        Frontend["🌐 Frontend<br/>(Nginx)"]
+        Ingress["🔀 Ingress<br/>(HTTPS)"]
+        PVC["💿 PVC<br/>(ChromaDB data)"]
+        
+        ChromaDBService -.->|Persistent storage| PVC
+    end
+    
+    subgraph AI["🤖 AI Services (GCP)"]
+        VertexEmbed
+        Gemini["✨ Gemini API<br/>(LLM)"]
+    end
+    
+    subgraph USER["👤 Users"]
+        WebUser["🌐 Web Browser"]
+        GameUser["🎮 In-Game Client"]
+    end
+    
+    %% Ingestion flow (blue, dashed)
+    GitRepo -.->|git push triggers| IngestionJob
+    ChromaDBService -.->|stores| PVC
+    
+    %% Build flow (green)
+    BuildJob --> GAR
+    GAR -->|deploy| RAGService
+    
+    %% Query flow (orange)
+    WebUser -->|HTTPS| Ingress
+    GameUser -->|API| Ingress
+    Ingress --> Frontend
+    Frontend -->|/api/*| RAGService
+    
+    RAGService -->|1. Embed question| VertexEmbed
+    RAGService -->|2. Query vectors| ChromaDBService
+    ChromaDBService -->|3. Top-K chunks| RAGService
+    RAGService -->|4. Generate answer| Gemini
+    Gemini -->|5. Response| RAGService
+    RAGService -->|JSON| Frontend
+    Frontend -->|HTML| Ingress
+    Ingress -->|HTTPS| WebUser
+    Ingress -->|API| GameUser
+    
+    %% Styling
+    classDef source fill:#e3f2fd,stroke:#1976d2
+    classDef cicd fill:#f3e5f5,stroke:#7b1fa2
+    classDef k8s fill:#e8f5e9,stroke:#388e3c
+    classDef ai fill:#fff3e0,stroke:#f57c00
+    classDef user fill:#fce4ec,stroke:#c2185b
+    
+    class GitRepo source
+    class IngestionJob,BuildJob,ProcessDocs cicd
+    class ChromaDBService,RAGService,Frontend,Ingress,PVC k8s
+    class VertexEmbed,Gemini ai
+    class WebUser,GameUser user
+```
+
 ## Quick Start
 
 For a complete manual workflow from GitHub to working website:
@@ -122,9 +200,8 @@ cd ../frontend
 - Ensure all environment variables are set correctly
 - Review error messages in service logs
 
-## Related Documentation
+## Additional Resources
 
-- Main overview: `../uplifted-mascot.md`
-- System integration: `../overview.md`
-- Bifrost protocol: `../bifrost-protocol.md`
+- **Jenkins CI/CD**: See `JENKINS.md` for automated deployment setup
+- **Kubernetes Deployment**: See `k8s/README.md` for detailed K8s deployment guide
 

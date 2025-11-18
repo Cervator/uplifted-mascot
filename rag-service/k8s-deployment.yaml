@@ -12,22 +12,29 @@ spec:
       labels:
         app: um-rag-service
     spec:
+      serviceAccountName: um-vertex-ai-sa  # Service account with Workload Identity (see k8s/README.md)
       containers:
       - name: rag-service
-        image: gcr.io/YOUR_PROJECT_ID/um-rag-service:latest
+        image: us-east1-docker.pkg.dev/teralivekubernetes/uplifted-mascot/um-rag-service:latest  # Will be replaced by Jenkins sed command
         ports:
         - containerPort: 8000
         env:
         - name: GCP_PROJECT_ID
-          value: "your-project-id"
+          value: "teralivekubernetes"  # Hardcoded - no secrets needed
         - name: GCP_REGION
           value: "us-east1"
-        - name: VECTOR_INDEX_ID
-          value: "your-index-id"
-        - name: VECTOR_ENDPOINT_ID
-          value: "your-endpoint-id"
-        - name: DEPLOYED_INDEX_ID
-          value: "um_deployed_index"
+        - name: CHROMA_COLLECTION_NAME
+          value: "uplifted_mascot"
+        # Connect to ChromaDB service via HTTP (not file-based)
+        - name: CHROMA_HOST
+          value: "chromadb"  # Kubernetes service name
+        - name: CHROMA_PORT
+          value: "8000"
+        # Optional: Vertex AI Vector Search (comment out if using ChromaDB only)
+        # - name: VECTOR_INDEX_ID
+        #   value: "your-index-id"
+        # - name: VECTOR_ENDPOINT_ID
+        #   value: "your-endpoint-id"
         resources:
           requests:
             memory: "512Mi"
@@ -41,10 +48,11 @@ kind: Service
 metadata:
   name: um-rag-service
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: um-rag-service
   ports:
   - port: 80
     targetPort: 8000
+    name: http
 

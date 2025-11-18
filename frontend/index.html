@@ -261,7 +261,10 @@
 
     <script>
         // Configuration
-        const RAG_SERVICE_URL = 'http://localhost:8000';  // Change to your service URL
+        // Auto-detect API URL: use /api if on same domain, otherwise use full URL
+        const RAG_SERVICE_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8000' 
+            : '/api';
         const PROJECT = 'bifrost';
         const MASCOT = 'gooey';
 
@@ -326,7 +329,11 @@
                 setLoading(true);
                 errorDiv.style.display = 'none';
 
-                const response = await fetch(`${RAG_SERVICE_URL}/ask-mascot`, {
+                // Ensure proper API path
+                const apiUrl = RAG_SERVICE_URL.endsWith('/') 
+                    ? `${RAG_SERVICE_URL}ask-mascot` 
+                    : `${RAG_SERVICE_URL}/ask-mascot`;
+                const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

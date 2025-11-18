@@ -111,8 +111,11 @@
 
     <script>
         // Widget configuration
+        // Auto-detect API URL: use /api if on same domain, otherwise use full URL
         const UM_CONFIG = {
-            serviceUrl: 'http://localhost:8000',  // Change to your service URL
+            serviceUrl: window.location.hostname === 'localhost' 
+                ? 'http://localhost:8000' 
+                : '/api',
             project: 'bifrost',
             mascot: 'gooey'
         };
@@ -148,7 +151,11 @@
             sendBtn.disabled = true;
 
             try {
-                const res = await fetch(`${UM_CONFIG.serviceUrl}/ask-mascot`, {
+                // Ensure proper API path
+                const apiUrl = UM_CONFIG.serviceUrl.endsWith('/') 
+                    ? `${UM_CONFIG.serviceUrl}ask-mascot` 
+                    : `${UM_CONFIG.serviceUrl}/ask-mascot`;
+                const res = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

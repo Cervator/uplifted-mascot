@@ -39,6 +39,8 @@ REGION = os.getenv("GCP_REGION", "us-east1")
 # ChromaDB configuration
 CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "uplifted_mascot")
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
+CHROMA_HOST = os.getenv("CHROMA_HOST")  # If set, use HTTP client to connect to ChromaDB service
+CHROMA_PORT = os.getenv("CHROMA_PORT", "8000")
 
 # Legacy Vertex AI Vector Search (optional, for scaling)
 INDEX_ID = os.getenv("VECTOR_INDEX_ID")  # Optional - only if using Vertex AI Vector Search
@@ -77,7 +79,7 @@ def get_chat_model():
         # Using the modern GenerativeModel API
         # Prioritize Flash models - faster, cheaper, perfect for RAG/document Q&A
         model_names = [
-            "gemini-2.5-flash",          # Latest Flash - best balance of speed/quality for RAG
+            "gemini-2.5-flash",          # Latest Flash - balance speed/quality for RAG  <-- top entry gets used
             "gemini-2.5-flash-lite",     # Fastest model - great for simple Q&A (may be more concise?)
             "gemini-2.0-flash-001",      # Stable Flash - reliable fallback
             "gemini-2.0-flash-lite-001", # Stable Flash-Lite - fastest fallback
@@ -114,69 +116,93 @@ def get_chroma_collection():
     """Get or create ChromaDB collection."""
     global _chroma_collection
     if _chroma_collection is None:
-        # Initialize ChromaDB client (persistent mode)
-        # Try multiple paths for the database - prioritize workspace root
-        # Path(__file__) is rag-service/rag_service.py, so parent.parent is workspace root
-        workspace_root = Path(__file__).parent.parent
-        
-        persist_paths = [
-            workspace_root / "chroma_db",  # Workspace root (most likely location)
-            workspace_root / CHROMA_PERSIST_DIR.lstrip("./"),  # If CHROMA_PERSIST_DIR is relative
-            Path(CHROMA_PERSIST_DIR).resolve(),  # Absolute or resolved path from env
-            Path("chroma_db").resolve(),  # Current directory
-            Path("../chroma_db").resolve(),  # Parent directory
-        ]
-        
-        client = None
-        found_path = None
-        
-        # Try each path - check if it exists AND has the collection
-        for persist_path in persist_paths:
-            # Only try paths that actually exist
-            if persist_path.exists() and persist_path.is_dir():
-                try:
-                    test_client = chromadb.PersistentClient(
-                        path=str(persist_path),
-                        settings=Settings(anonymized_telemetry=False)
-                    )
-                    # Check if collection exists in this database
-                    try:
-                        test_collection = test_client.get_collection(name=CHROMA_COLLECTION_NAME)
-                        # Collection exists! Use this client
-                        client = test_client
-                        found_path = persist_path
-                        print(f"✓ Found ChromaDB at: {persist_path.absolute()}")
-                        break
-                    except Exception:
-                        # Collection doesn't exist in this database, try next path
-                        continue
-                except Exception as e:
-                    # Could not connect to this path, try next
-                    continue
-        
-        if client is None:
-            # No existing database found, create in workspace root
-            default_path = workspace_root / "chroma_db"
-            default_path.mkdir(parents=True, exist_ok=True)
-            client = chromadb.PersistentClient(
-                path=str(default_path),
-                settings=Settings(anonymized_telemetry=False)
-            )
-            found_path = default_path
-            print(f"Created new ChromaDB at: {default_path.absolute()}")
+        # Check if we should use HTTP client (Kubernetes service) or persistent client (local dev)
+        if CHROMA_HOST:
+            # Use HTTP client to connect to ChromaDB service (Kubernetes deployment)
+            try:
+                client = chromadb.HttpClient(
+                    host=CHROMA_HOST,
+                    port=int(CHROMA_PORT),
+                    settings=Settings(anonymized_telemetry=False)
+                )
+                print(f"✓ Connecting to ChromaDB service at {CHROMA_HOST}:{CHROMA_PORT}")
+            except Exception as e:
+                raise Exception(
+                    f"Failed to connect to ChromaDB service at {CHROMA_HOST}:{CHROMA_PORT}. "
+                    f"Make sure the ChromaDB service is running and accessible.\n"
+                    f"Error: {e}"
+                )
         else:
-            print(f"Using ChromaDB at: {found_path.absolute()}")
+            # Use persistent client for local development
+            # Try multiple paths for the database - prioritize workspace root
+            # Path(__file__) is rag-service/rag_service.py, so parent.parent is workspace root
+            workspace_root = Path(__file__).parent.parent
+            
+            persist_paths = [
+                workspace_root / "chroma_db",  # Workspace root (most likely location)
+                workspace_root / CHROMA_PERSIST_DIR.lstrip("./"),  # If CHROMA_PERSIST_DIR is relative
+                Path(CHROMA_PERSIST_DIR).resolve(),  # Absolute or resolved path from env
+                Path("chroma_db").resolve(),  # Current directory
+                Path("../chroma_db").resolve(),  # Parent directory
+            ]
+            
+            client = None
+            found_path = None
+            
+            # Try each path - check if it exists AND has the collection
+            for persist_path in persist_paths:
+                # Only try paths that actually exist
+                if persist_path.exists() and persist_path.is_dir():
+                    try:
+                        test_client = chromadb.PersistentClient(
+                            path=str(persist_path),
+                            settings=Settings(anonymized_telemetry=False)
+                        )
+                        # Check if collection exists in this database
+                        try:
+                            test_collection = test_client.get_collection(name=CHROMA_COLLECTION_NAME)
+                            # Collection exists! Use this client
+                            client = test_client
+                            found_path = persist_path
+                            print(f"✓ Found ChromaDB at: {persist_path.absolute()}")
+                            break
+                        except Exception:
+                            # Collection doesn't exist in this database, try next path
+                            continue
+                    except Exception as e:
+                        # Could not connect to this path, try next
+                        continue
+            
+            if client is None:
+                # No existing database found, create in workspace root
+                default_path = workspace_root / "chroma_db"
+                default_path.mkdir(parents=True, exist_ok=True)
+                client = chromadb.PersistentClient(
+                    path=str(default_path),
+                    settings=Settings(anonymized_telemetry=False)
+                )
+                found_path = default_path
+                print(f"Created new ChromaDB at: {default_path.absolute()}")
+            else:
+                print(f"Using ChromaDB at: {found_path.absolute()}")
         
         # Get collection
         try:
             _chroma_collection = client.get_collection(name=CHROMA_COLLECTION_NAME)
             print(f"✓ Loaded ChromaDB collection: {CHROMA_COLLECTION_NAME} ({_chroma_collection.count()} documents)")
         except Exception as e:
-            raise Exception(
-                f"ChromaDB collection '{CHROMA_COLLECTION_NAME}' not found in {found_path.absolute()}. "
-                f"Please run: python scripts/load_chromadb.py scripts/embeddings-array.json\n"
-                f"Error: {e}"
-            )
+            if CHROMA_HOST:
+                raise Exception(
+                    f"ChromaDB collection '{CHROMA_COLLECTION_NAME}' not found in service at {CHROMA_HOST}:{CHROMA_PORT}. "
+                    f"Make sure the ingestion job has loaded the embeddings.\n"
+                    f"Error: {e}"
+                )
+            else:
+                raise Exception(
+                    f"ChromaDB collection '{CHROMA_COLLECTION_NAME}' not found in {found_path.absolute()}. "
+                    f"Please run: python scripts/load_chromadb.py scripts/embeddings-array.json\n"
+                    f"Error: {e}"
+                )
     
     return _chroma_collection
 

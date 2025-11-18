@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: um-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: um-frontend
+  template:
+    metadata:
+      labels:
+        app: um-frontend
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: frontend-files
+          mountPath: /usr/share/nginx/html
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+      volumes:
+      - name: frontend-files
+        configMap:
+          name: um-frontend-html
+      - name: nginx-config
+        configMap:
+          name: um-frontend-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: um-frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: um-frontend
+  ports:
+  - port: 80
+    targetPort: 80
+    name: http
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: um-frontend-config
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+        
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+        
+        # Proxy API requests to RAG service
+        location /api {
+            proxy_pass http://um-rag-service:80;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
