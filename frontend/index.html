@@ -261,10 +261,10 @@
 
     <script>
         // Configuration
-        // Auto-detect API URL: use /api if on same domain, otherwise use full URL
+        // Auto-detect API URL: use root path if on same domain, otherwise use full URL
         const RAG_SERVICE_URL = window.location.hostname === 'localhost' 
             ? 'http://localhost:8000' 
-            : '/api';
+            : '';
         const PROJECT = 'bifrost';
         const MASCOT = 'gooey';
 

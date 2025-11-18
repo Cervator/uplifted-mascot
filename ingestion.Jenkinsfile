@@ -1,12 +1,12 @@
 pipeline {
     agent {
-        label 'python'  // Python build agent (runs in same k8s cluster)
+        label 'python-ai'  // Python build agent (runs in same k8s cluster)
     }
     
     environment {
         GCP_PROJECT_ID = 'teralivekubernetes'  // Hardcoded GCP project
         GCP_REGION = 'us-east1'
-        CHROMA_HOST = 'chromadb'  // Kubernetes service name (accessible from within cluster)
+        CHROMA_HOST = 'chromadb.um.svc.cluster.local'  // FQDN for cross-namespace access
         CHROMA_PORT = '8000'
         CHROMA_COLLECTION_NAME = 'uplifted_mascot'
     }
@@ -15,19 +15,6 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
-            }
-        }
-        
-        stage('Install Dependencies') {
-            steps {
-                container('builder') {
-                    script {
-                        sh '''
-                            pip install -r scripts/requirements.txt
-                            pip install chromadb>=0.4.0
-                        '''
-                    }
-                }
             }
         }
         
@@ -63,8 +50,8 @@ pipeline {
             steps {
                 container('builder') {
                     script {
-                        // Connect directly to ChromaDB service (chromadb:8000)
-                        // No kubectl needed - Jenkins runs in same cluster
+                        // Connect directly to ChromaDB service using FQDN (cross-namespace)
+                        // Jenkins agent runs in 'jenkins' namespace, ChromaDB is in 'um' namespace
                         sh """
                             export CHROMA_HOST=${CHROMA_HOST}
                             export CHROMA_PORT=${CHROMA_PORT}

@@ -62,16 +62,17 @@ data:
         root /usr/share/nginx/html;
         index index.html;
         
-        location / {
-            try_files $uri $uri/ /index.html;
-        }
-        
-        # Proxy API requests to RAG service
-        location /api {
+        # Proxy RAG service API endpoints directly (no /api prefix needed)
+        location ~ ^/(ask-mascot|health|docs|openapi.json) {
             proxy_pass http://um-rag-service:80;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        
+        # Serve static files
+        location / {
+            try_files $uri $uri/ /index.html;
         }
     }

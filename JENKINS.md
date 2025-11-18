@@ -62,15 +62,22 @@ The Jenkinsfile uses `withKubeConfig` with credential ID `utility-admin-kubeconf
 
 1. Go to **Manage Jenkins** → **Configure System** → **Cloud** → **Kubernetes**
 2. Find your pod template with label `python` (or create one)
-3. Under **Pod Template** → **Service Account**, set: `um-vertex-ai-sa`
-4. This allows the `builder` container to authenticate to Vertex AI APIs via Workload Identity
+3. Under **Pod Template** → **Service Account**, set: `um-vertex-ai-sa` (in the `jenkins` namespace)
+4. **Container Image**: Use the custom pre-built image (recommended) or a newer Python base image:
+   - **Recommended**: `us-east1-docker.pkg.dev/teralivekubernetes/logistics/jenkins-python-ai-agent:latest`
+     - Pre-installed dependencies (faster pipelines)
+     - Python 3.11 with SQLite 3.35.0+ (ChromaDB compatible)
+   - **Alternative**: `python:3.11-slim` or `python:3.12-slim` (dependencies installed on each run)
+   - **Avoid**: `python:3.9-slim` or older (SQLite too old for ChromaDB)
+5. This allows the `builder` container to authenticate to Vertex AI APIs via Workload Identity
 
 **Why this is needed:**
 - The ingestion pipeline runs `create_embeddings.py` which calls Vertex AI Embeddings API
+- The ingestion pipeline runs `load_chromadb.py` which requires SQLite 3.35.0+ (ChromaDB dependency)
 - Workload Identity allows the pod to authenticate as `um-vertex-ai-sa@teralivekubernetes.iam.gserviceaccount.com`
 - No service account keys needed - authentication is automatic
 
-**Note**: Make sure Workload Identity is enabled and the service account is properly bound (see `k8s/README.md` for setup steps).
+**Note**: Make sure Workload Identity is enabled and the service account is properly bound (see `k8s/README.md` for setup steps). The service account must exist in the `jenkins` namespace with the Workload Identity annotation.
 
 ## Pipeline Setup
 
