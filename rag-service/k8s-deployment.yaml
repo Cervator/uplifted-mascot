@@ -30,6 +30,14 @@ spec:
           value: "chromadb"  # Kubernetes service name
         - name: CHROMA_PORT
           value: "8000"
+        # Rate limiting (requests per minute per IP)
+        - name: RATE_LIMIT_PER_MINUTE
+          value: "10"  # Adjust as needed (default: 10)
+        # Token limits for Vertex AI (cost control)
+        - name: MAX_OUTPUT_TOKENS
+          value: "1024"  # Maximum tokens in AI response (default: 1024, max varies by model)
+        - name: MAX_INPUT_TOKENS
+          value: "4096"  # Maximum tokens in prompt (default: 4096, Gemini supports up to 1M+ but we cap for cost)
         # Optional: Vertex AI Vector Search (comment out if using ChromaDB only)
         # - name: VECTOR_INDEX_ID
         #   value: "your-index-id"

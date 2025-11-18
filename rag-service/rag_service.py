@@ -5,23 +5,39 @@ Provides API endpoint for querying the knowledge base.
 """
 
 import os
+import time
 from typing import Optional, List, Dict
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from google.cloud import aiplatform
 from vertexai.language_models import TextEmbeddingModel
-from vertexai.generative_models import GenerativeModel
+from vertexai.generative_models import GenerativeModel, GenerationConfig
 from dotenv import load_dotenv
 import chromadb
 from pathlib import Path
 from chromadb.config import Settings
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Load environment variables
 load_dotenv()
 
 # Initialize FastAPI
 app = FastAPI(title="Uplifted Mascot RAG Service")
+
+# Rate limiting configuration (requests per minute per IP)
+RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "10"))
+
+# Token limits for Vertex AI (cost control)
+MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS", "1024"))  # Max tokens in response
+MAX_INPUT_TOKENS = int(os.getenv("MAX_INPUT_TOKENS", "4096"))    # Max tokens in prompt (Gemini default is higher, but we cap it for cost control)
+
+# Initialize rate limiter (in-memory, per IP)
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add CORS middleware
 app.add_middleware(
@@ -235,8 +251,19 @@ Keep responses concise and actionable."""
 class AskRequest(BaseModel):
     project: str
     mascot: str
-    question: str
-    top_k: Optional[int] = 5
+    question: str = Field(..., min_length=1, max_length=1000, description="Question to ask (max 1000 characters)")
+    top_k: Optional[int] = Field(default=5, ge=1, le=20, description="Number of context chunks to retrieve (1-20)")
+    
+    @field_validator('question')
+    @classmethod
+    def validate_question(cls, v: str) -> str:
+        """Validate question is not empty and not too long."""
+        v = v.strip()
+        if not v:
+            raise ValueError("Question cannot be empty")
+        if len(v) > 1000:
+            raise ValueError("Question cannot exceed 1000 characters")
+        return v
 
 class AskResponse(BaseModel):
     response: str
@@ -334,19 +361,50 @@ Question: {question}
 
 Answer:"""
         
+        # Truncate prompt if it exceeds MAX_INPUT_TOKENS (rough estimate: 1 token ≈ 4 characters)
+        # This is a conservative estimate to stay under token limits
+        max_input_chars = MAX_INPUT_TOKENS * 4
+        if len(prompt) > max_input_chars:
+            print(f"Warning: Prompt length ({len(prompt)} chars) exceeds estimated token limit. Truncating...")
+            # Keep the personality and question, truncate context
+            personality_and_question = f"""{personality}
+
+Use the following context from the project documentation to answer the user's question.
+If the context doesn't contain enough information, say so honestly.
+
+Context:
+"""
+            question_part = f"\n\nQuestion: {question}\n\nAnswer:"
+            available_chars = max_input_chars - len(personality_and_question) - len(question_part)
+            # Truncate context text to fit
+            if len(context_text) > available_chars:
+                context_text = context_text[:available_chars] + "\n\n[Context truncated due to length limits]"
+            prompt = personality_and_question + context_text + question_part
+        
         # Generate response
         chat_model = get_chat_model()
+        
+        # Configure generation parameters (token limits, temperature, etc.)
+        generation_config = GenerationConfig(
+            max_output_tokens=MAX_OUTPUT_TOKENS,
+            temperature=0.7,  # Balanced creativity/consistency for Q&A
+            top_p=0.95,       # Nucleus sampling
+            top_k=40          # Top-K sampling
+        )
         
         # Use generate_content for single-turn (simpler, may avoid deprecation warnings)
         # Or start_chat for multi-turn conversations
         try:
-            # Try direct generate_content first (simpler API)
-            response = chat_model.generate_content(prompt)
+            # Try direct generate_content first (simpler API) with generation config
+            response = chat_model.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
             return response.text
         except AttributeError:
             # Fallback to chat API if generate_content doesn't work
             chat = chat_model.start_chat()
-            response = chat.send_message(prompt)
+            response = chat.send_message(prompt, generation_config=generation_config)
             return response.text
     
     except Exception as e:
@@ -389,25 +447,29 @@ def health():
     }
 
 @app.post("/ask-mascot", response_model=AskResponse)
-def ask_mascot(request: AskRequest):
+@limiter.limit(f"{RATE_LIMIT_PER_MINUTE}/minute")  # Rate limit: configurable requests per minute per IP
+def ask_mascot(request: Request, request_body: AskRequest):
     """
     Main endpoint for asking the mascot a question.
     
+    Rate limited to 10 requests per minute per IP address to prevent abuse.
+    
     Args:
-        request: AskRequest with project, mascot, and question
+        request: FastAPI Request object (for rate limiting)
+        request_body: AskRequest with project, mascot, and question
     
     Returns:
         AskResponse with generated answer and sources
     """
     # Validate mascot
-    if request.mascot not in MASCOT_PERSONALITIES:
+    if request_body.mascot not in MASCOT_PERSONALITIES:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown mascot: {request.mascot}. Available: {list(MASCOT_PERSONALITIES.keys())}"
+            detail=f"Unknown mascot: {request_body.mascot}. Available: {list(MASCOT_PERSONALITIES.keys())}"
         )
     
     # Retrieve relevant context
-    context_chunks = retrieve_context(request.question, request.top_k)
+    context_chunks = retrieve_context(request_body.question, request_body.top_k)
     
     if not context_chunks:
         return AskResponse(
@@ -418,9 +480,9 @@ def ask_mascot(request: AskRequest):
     
     # Generate response
     response_text = generate_response(
-        request.question,
+        request_body.question,
         context_chunks,
-        request.mascot
+        request_body.mascot
     )
     
     # Extract sources
