@@ -4,6 +4,7 @@ RAG Service for Uplifted Mascot.
 Provides API endpoint for querying the knowledge base.
 """
 
+import logging
 import os
 import time
 from typing import Optional, List, Dict
@@ -26,6 +27,14 @@ load_dotenv()
 
 # Initialize FastAPI
 app = FastAPI(title="Uplifted Mascot RAG Service")
+
+# Logging configuration
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("rag_service")
 
 # Rate limiting configuration (requests per minute per IP)
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "10"))
@@ -461,8 +470,18 @@ def ask_mascot(request: Request, request_body: AskRequest):
     Returns:
         AskResponse with generated answer and sources
     """
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(
+        "ask-mascot request ip=%s mascot=%s top_k=%s question=\"%s\"",
+        client_ip,
+        request_body.mascot,
+        request_body.top_k,
+        request_body.question.strip(),
+    )
+    
     # Validate mascot
     if request_body.mascot not in MASCOT_PERSONALITIES:
+        logger.warning("ask-mascot invalid mascot ip=%s mascot=%s", client_ip, request_body.mascot)
         raise HTTPException(
             status_code=400,
             detail=f"Unknown mascot: {request_body.mascot}. Available: {list(MASCOT_PERSONALITIES.keys())}"
@@ -470,8 +489,14 @@ def ask_mascot(request: Request, request_body: AskRequest):
     
     # Retrieve relevant context
     context_chunks = retrieve_context(request_body.question, request_body.top_k)
+    logger.info(
+        "ask-mascot context ip=%s chunks=%d",
+        client_ip,
+        len(context_chunks),
+    )
     
     if not context_chunks:
+        logger.info("ask-mascot no-context ip=%s question=\"%s\"", client_ip, request_body.question.strip())
         return AskResponse(
             response="I couldn't find relevant information in the knowledge base. Please try rephrasing your question.",
             sources=[],
@@ -493,6 +518,18 @@ def ask_mascot(request: Request, request_body: AskRequest):
     # Calculate confidence (simple: based on average distance)
     avg_distance = sum(chunk["distance"] for chunk in context_chunks) / len(context_chunks)
     confidence = max(0.0, min(1.0, 1.0 - avg_distance))  # Convert distance to confidence
+    
+    preview = response_text.replace("\n", " ")[:200]
+    logger.info(
+        "ask-mascot response ip=%s mascot=%s top_k=%s chunks=%d confidence=%.2f preview=\"%s%s\"",
+        client_ip,
+        request_body.mascot,
+        request_body.top_k,
+        len(context_chunks),
+        confidence,
+        preview,
+        "..." if len(response_text) > 200 else "",
+    )
     
     return AskResponse(
         response=response_text,
