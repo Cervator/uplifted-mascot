@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -155,8 +156,13 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
 
         .error {
@@ -226,31 +232,27 @@
     <!-- Markdown renderer -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
+
 <body>
     <div class="chat-container">
         <div class="chat-header">
             <h1>🤖 Ask Gooey</h1>
             <p>Your friendly Terasology assistant</p>
         </div>
-        
+
         <div class="chat-messages" id="messages">
             <div class="message assistant">
                 <div class="message-bubble">
-                    Hi there! *wobbles excitedly* I'm Gooey, your helpful assistant. 
+                    Hi there! *wobbles excitedly* I'm Gooey, your helpful assistant.
                     Ask me anything about Terasology, Bifrost, or modding!
                 </div>
             </div>
         </div>
-        
+
         <div class="chat-input-container">
             <form class="chat-input-form" id="chatForm">
-                <input 
-                    type="text" 
-                    class="chat-input" 
-                    id="userInput" 
-                    placeholder="Ask a question..."
-                    autocomplete="off"
-                />
+                <input type="text" class="chat-input" id="userInput" placeholder="Ask a question..."
+                    autocomplete="off" />
                 <button type="submit" class="send-button" id="sendButton">
                     Send
                 </button>
@@ -262,8 +264,8 @@
     <script>
         // Configuration
         // Auto-detect API URL: use root path if on same domain, otherwise use full URL
-        const RAG_SERVICE_URL = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8000' 
+        const RAG_SERVICE_URL = window.location.hostname === 'localhost'
+            ? 'http://localhost:8000'
             : '';
         const PROJECT = 'bifrost';
         const MASCOT = 'gooey';
@@ -277,10 +279,10 @@
         function addMessage(text, isUser, sources = null) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${isUser ? 'user' : 'assistant'}`;
-            
+
             const bubble = document.createElement('div');
             bubble.className = 'message-bubble';
-            
+
             // Render Markdown for assistant messages, plain text for user messages
             if (isUser) {
                 bubble.textContent = text;
@@ -293,16 +295,16 @@
                     bubble.textContent = text;
                 }
             }
-            
+
             messageDiv.appendChild(bubble);
-            
+
             if (sources && sources.length > 0) {
                 const sourcesDiv = document.createElement('div');
                 sourcesDiv.className = 'message-sources';
                 sourcesDiv.textContent = `Sources: ${sources.join(', ')}`;
                 messageDiv.appendChild(sourcesDiv);
             }
-            
+
             messagesDiv.appendChild(messageDiv);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
@@ -310,9 +312,6 @@
         function showError(message) {
             errorDiv.textContent = message;
             errorDiv.style.display = 'block';
-            setTimeout(() => {
-                errorDiv.style.display = 'none';
-            }, 5000);
         }
 
         function setLoading(loading) {
@@ -330,8 +329,8 @@
                 errorDiv.style.display = 'none';
 
                 // Ensure proper API path
-                const apiUrl = RAG_SERVICE_URL.endsWith('/') 
-                    ? `${RAG_SERVICE_URL}ask-mascot` 
+                const apiUrl = RAG_SERVICE_URL.endsWith('/')
+                    ? `${RAG_SERVICE_URL}ask-mascot`
                     : `${RAG_SERVICE_URL}/ask-mascot`;
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -351,12 +350,26 @@
                 }
 
                 const data = await response.json();
-                
+
                 addMessage(data.response, false, data.sources);
-                
+
             } catch (error) {
                 console.error('Error:', error);
-                showError(`Error: ${error.message}. Make sure the RAG service is running.`);
+
+                let errorMessage = `Error: ${error.message}.`;
+                try {
+                    // Diagnostic check: Try to fetch the page itself to check internet connection
+                    const onlineCheck = await fetch(window.location.href, { method: 'HEAD', cache: 'no-store' });
+                    if (onlineCheck.ok) {
+                        errorMessage += " The RAG service API is unusable but appears to be online. Please check if an ad blocker or extension is blocking the request.";
+                    } else {
+                        errorMessage += " You appear to be unable to connect to the API for some reason.";
+                    }
+                } catch (e) {
+                    errorMessage += " You appear to be unable to connect to the API for some reason.";
+                }
+
+                showError(errorMessage);
                 addMessage("I'm sorry, I encountered an error. Please try again.", false);
             } finally {
                 setLoading(false);
@@ -365,26 +378,19 @@
 
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const question = userInput.value.trim();
             if (!question) return;
-            
+
             // Add user message
             addMessage(question, true);
             userInput.value = '';
-            
+
             // Ask mascot
             await askMascot(question);
         });
 
-        // Allow Enter to submit (but Shift+Enter for new line)
-        userInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                chatForm.dispatchEvent(new Event('submit'));
-            }
-        });
     </script>
 </body>
-</html>
 
+</html>
